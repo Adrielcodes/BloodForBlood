@@ -101,7 +101,7 @@ GameObject:
   - component: {fileID: 6557372972283161732}
   - component: {fileID: 249601321970680566}
   - component: {fileID: 3125723268548415076}
-  - component: {fileID: 3844758052129908540}
+  - component: {fileID: 2850110081518792428}
   - component: {fileID: 6173716147425015199}
   m_Layer: 0
   m_Name: Player
@@ -119,7 +119,7 @@ Transform:
   m_GameObject: {fileID: 7852008061236801692}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 0, y: 1, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -163,7 +163,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 581050273
+  GlobalObjectIdHash: 2598869521
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -178,7 +178,7 @@ MonoBehaviour:
   AutoObjectParentSync: 1
   SyncOwnerTransformWhenParented: 1
   AllowOwnerToParent: 0
---- !u!114 &3844758052129908540
+--- !u!114 &2850110081518792428
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -187,9 +187,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 7852008061236801692}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e96cb6065543e43c4a752faaa1468eb1, type: 3}
+  m_Script: {fileID: 11500000, guid: c8c403ef1cc0a6a40968dbe6d2685bc1, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.Components.NetworkTransform
+  m_EditorClassIdentifier: Assembly-CSharp::OwnerNetworkTransform
   ShowTopMostFoldoutHeaderGroup: 1
   NetworkTransformExpanded: 0
   AutoOwnerAuthorityTickOffset: 1

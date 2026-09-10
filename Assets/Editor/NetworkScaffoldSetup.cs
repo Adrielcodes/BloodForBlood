@@ -1,6 +1,5 @@
 using System.IO;
 using Unity.Netcode;
-using Unity.Netcode.Components;
 using Unity.Netcode.Transports.UTP;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -11,13 +10,28 @@ public static class NetworkScaffoldSetup
     [MenuItem("Blood For Blood/Setup Network Scaffolding")]
     public static void Setup()
     {
+        CreateGroundPlane();
         GameObject playerPrefab = CreatePlayerPrefab();
         CreateNetworkManager(playerPrefab);
 
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
 
-        Debug.Log("Blood For Blood: network scaffolding created (NetworkManager + Player prefab).");
+        Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Player prefab).");
+    }
+
+    private static void CreateGroundPlane()
+    {
+        if (GameObject.Find("Ground") != null)
+        {
+            Debug.Log("Blood For Blood: Ground already present in scene, skipping.");
+            return;
+        }
+
+        GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        ground.name = "Ground";
+        ground.transform.position = Vector3.zero;
+        ground.transform.localScale = new Vector3(5f, 1f, 5f);
     }
 
     private static GameObject CreatePlayerPrefab()
@@ -29,9 +43,10 @@ public static class NetworkScaffoldSetup
             Directory.CreateDirectory(prefabDir);
 
         var root = new GameObject("Player");
+        root.transform.position = new Vector3(0f, 1f, 0f);
         root.AddComponent<CharacterController>();
         root.AddComponent<NetworkObject>();
-        root.AddComponent<NetworkTransform>();
+        root.AddComponent<OwnerNetworkTransform>();
         root.AddComponent<NetworkedPlayerController>();
 
         GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Capsule);
