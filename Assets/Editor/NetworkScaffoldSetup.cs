@@ -47,7 +47,7 @@ public static class NetworkScaffoldSetup
 
     private static void CreateNetworkManager(GameObject playerPrefab)
     {
-        if (Object.FindFirstObjectByType<NetworkManager>() != null)
+        if (Object.FindAnyObjectByType<NetworkManager>() != null)
         {
             Debug.Log("Blood For Blood: NetworkManager already present in scene, skipping.");
             return;
