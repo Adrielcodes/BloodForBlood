@@ -6,6 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Unity multiplayer game "Blood for Blood". Unity 6000.6.0f1 (6.6 LTS), Universal Render Pipeline, new Input System (exclusive — see Gotchas), Netcode for GameObjects for multiplayer.
 
+Full design doc: `docs/GDD.md`. Key facts that shape architecture:
+- **4v1 asymmetrical horror**: one Killer, 3-4 Survivors — these are fundamentally different roles (movement, abilities, win conditions), not the same player class with a skin swap. The current `NetworkedPlayerController`/`Player.prefab` is a placeholder shared-movement scaffold from initial netcode setup, not a real Survivor or Killer controller.
+- **Stagger & Finisher** is the signature mechanic: Survivors parry Killer attacks (skill-based, not free hits) to fill a Stagger Meter; a full meter opens a timed vulnerable window where 2+ nearby Survivors can trigger a Finisher sequence. Killing the Killer takes multiple Stagger/Finisher cycles plus a rare item — never a single cycle.
+- MVP target: 1 map, 1 Killer with 1 power, 3 Survivors, 2 weapon types, the chase → stagger → finisher loop working end-to-end. No progression/cosmetics yet.
+
 ## Commands
 
 Unity projects are primarily driven through the Editor GUI, not a CLI build/test pipeline. There is no lint/test command set up yet (no `.asmdef` or test assemblies exist in the project).
