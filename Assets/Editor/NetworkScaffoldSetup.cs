@@ -7,17 +7,21 @@ using UnityEngine;
 
 public static class NetworkScaffoldSetup
 {
+    private const string PrefabDir = "Assets/Prefabs";
+
     [MenuItem("Blood For Blood/Setup Network Scaffolding")]
     public static void Setup()
     {
         CreateGroundPlane();
-        GameObject playerPrefab = CreatePlayerPrefab();
-        CreateNetworkManager(playerPrefab);
+        GameObject survivorPrefab = CreateSurvivorPrefab();
+        GameObject killerPrefab = CreateKillerPrefab();
+        NetworkPrefabsList prefabsList = CreateOrUpdateNetworkPrefabsList(survivorPrefab, killerPrefab);
+        CreateOrUpdateNetworkManager(survivorPrefab, killerPrefab, prefabsList);
 
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
 
-        Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Player prefab).");
+        Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Survivor/Killer prefabs).");
     }
 
     private static void CreateGroundPlane()
@@ -34,24 +38,35 @@ public static class NetworkScaffoldSetup
         ground.transform.localScale = new Vector3(5f, 1f, 5f);
     }
 
-    private static GameObject CreatePlayerPrefab()
+    private static GameObject CreateSurvivorPrefab()
     {
-        const string prefabDir = "Assets/Prefabs";
-        const string prefabPath = prefabDir + "/Player.prefab";
+        return CreateRolePrefab<SurvivorController>("Survivor", Vector3.one);
+    }
 
-        if (!Directory.Exists(prefabDir))
-            Directory.CreateDirectory(prefabDir);
+    private static GameObject CreateKillerPrefab()
+    {
+        return CreateRolePrefab<KillerController>("Killer", Vector3.one * 1.2f);
+    }
 
-        var root = new GameObject("Player");
+    private static GameObject CreateRolePrefab<TController>(string prefabName, Vector3 visualScale)
+        where TController : NetworkedCharacterMotor
+    {
+        if (!Directory.Exists(PrefabDir))
+            Directory.CreateDirectory(PrefabDir);
+
+        string prefabPath = $"{PrefabDir}/{prefabName}.prefab";
+
+        var root = new GameObject(prefabName);
         root.transform.position = new Vector3(0f, 1f, 0f);
         root.AddComponent<CharacterController>();
         root.AddComponent<NetworkObject>();
         root.AddComponent<OwnerNetworkTransform>();
-        root.AddComponent<NetworkedPlayerController>();
+        root.AddComponent<TController>();
 
         GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Capsule);
         visual.name = "Visual";
         visual.transform.SetParent(root.transform, false);
+        visual.transform.localScale = visualScale;
         Object.DestroyImmediate(visual.GetComponent<CapsuleCollider>());
 
         PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
@@ -60,24 +75,64 @@ public static class NetworkScaffoldSetup
         return AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
     }
 
-    private static void CreateNetworkManager(GameObject playerPrefab)
+    private static NetworkPrefabsList CreateOrUpdateNetworkPrefabsList(GameObject survivorPrefab, GameObject killerPrefab)
     {
-        if (Object.FindAnyObjectByType<NetworkManager>() != null)
+        const string listPath = PrefabDir + "/NetworkPrefabsList.asset";
+
+        NetworkPrefabsList list = AssetDatabase.LoadAssetAtPath<NetworkPrefabsList>(listPath);
+        if (list == null)
         {
-            Debug.Log("Blood For Blood: NetworkManager already present in scene, skipping.");
-            return;
+            list = ScriptableObject.CreateInstance<NetworkPrefabsList>();
+            AssetDatabase.CreateAsset(list, listPath);
         }
 
-        var nmGO = new GameObject("NetworkManager");
-        NetworkManager nm = nmGO.AddComponent<NetworkManager>();
-        UnityTransport transport = nmGO.AddComponent<UnityTransport>();
-        nmGO.AddComponent<NetworkBootstrapUI>();
+        AddIfMissing(list, survivorPrefab);
+        AddIfMissing(list, killerPrefab);
 
-        nm.NetworkConfig.NetworkTransport = transport;
-        nm.NetworkConfig.PlayerPrefab = playerPrefab;
+        EditorUtility.SetDirty(list);
+        AssetDatabase.SaveAssets();
 
-        transport.ConnectionData.Address = "127.0.0.1";
-        transport.ConnectionData.Port = 7777;
+        return list;
+    }
+
+    private static void AddIfMissing(NetworkPrefabsList list, GameObject prefab)
+    {
+        if (!list.Contains(prefab))
+        {
+            list.Add(new NetworkPrefab { Prefab = prefab });
+        }
+    }
+
+    private static void CreateOrUpdateNetworkManager(GameObject survivorPrefab, GameObject killerPrefab, NetworkPrefabsList prefabsList)
+    {
+        NetworkManager existing = Object.FindAnyObjectByType<NetworkManager>();
+        GameObject nmGO = existing != null ? existing.gameObject : null;
+
+        if (nmGO == null)
+        {
+            nmGO = new GameObject("NetworkManager");
+            NetworkManager newManager = nmGO.AddComponent<NetworkManager>();
+            UnityTransport transport = nmGO.AddComponent<UnityTransport>();
+
+            newManager.NetworkConfig.NetworkTransport = transport;
+            transport.ConnectionData.Address = "127.0.0.1";
+            transport.ConnectionData.Port = 7777;
+        }
+
+        NetworkManager manager = nmGO.GetComponent<NetworkManager>();
+        manager.NetworkConfig.PlayerPrefab = survivorPrefab;
+        manager.NetworkConfig.ConnectionApproval = true;
+
+        if (!manager.NetworkConfig.Prefabs.NetworkPrefabsLists.Contains(prefabsList))
+            manager.NetworkConfig.Prefabs.NetworkPrefabsLists.Add(prefabsList);
+
+        if (nmGO.GetComponent<NetworkBootstrapUI>() == null)
+            nmGO.AddComponent<NetworkBootstrapUI>();
+
+        RoleAssignmentManager roleAssigner = nmGO.GetComponent<RoleAssignmentManager>();
+        if (roleAssigner == null)
+            roleAssigner = nmGO.AddComponent<RoleAssignmentManager>();
+        roleAssigner.Configure(survivorPrefab, killerPrefab);
 
         EditorUtility.SetDirty(nmGO);
     }
