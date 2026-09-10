@@ -15,8 +15,7 @@ public static class NetworkScaffoldSetup
         CreateGroundPlane();
         GameObject survivorPrefab = CreateSurvivorPrefab();
         GameObject killerPrefab = CreateKillerPrefab();
-        NetworkPrefabsList prefabsList = CreateOrUpdateNetworkPrefabsList(survivorPrefab, killerPrefab);
-        CreateOrUpdateNetworkManager(survivorPrefab, killerPrefab, prefabsList);
+        CreateOrUpdateNetworkManager(survivorPrefab, killerPrefab);
 
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
@@ -75,35 +74,7 @@ public static class NetworkScaffoldSetup
         return AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
     }
 
-    private static NetworkPrefabsList CreateOrUpdateNetworkPrefabsList(GameObject survivorPrefab, GameObject killerPrefab)
-    {
-        const string listPath = PrefabDir + "/NetworkPrefabsList.asset";
-
-        NetworkPrefabsList list = AssetDatabase.LoadAssetAtPath<NetworkPrefabsList>(listPath);
-        if (list == null)
-        {
-            list = ScriptableObject.CreateInstance<NetworkPrefabsList>();
-            AssetDatabase.CreateAsset(list, listPath);
-        }
-
-        AddIfMissing(list, survivorPrefab);
-        AddIfMissing(list, killerPrefab);
-
-        EditorUtility.SetDirty(list);
-        AssetDatabase.SaveAssets();
-
-        return list;
-    }
-
-    private static void AddIfMissing(NetworkPrefabsList list, GameObject prefab)
-    {
-        if (!list.Contains(prefab))
-        {
-            list.Add(new NetworkPrefab { Prefab = prefab });
-        }
-    }
-
-    private static void CreateOrUpdateNetworkManager(GameObject survivorPrefab, GameObject killerPrefab, NetworkPrefabsList prefabsList)
+    private static void CreateOrUpdateNetworkManager(GameObject survivorPrefab, GameObject killerPrefab)
     {
         NetworkManager existing = Object.FindAnyObjectByType<NetworkManager>();
         GameObject nmGO = existing != null ? existing.gameObject : null;
@@ -123,8 +94,11 @@ public static class NetworkScaffoldSetup
         manager.NetworkConfig.PlayerPrefab = survivorPrefab;
         manager.NetworkConfig.ConnectionApproval = true;
 
-        if (!manager.NetworkConfig.Prefabs.NetworkPrefabsLists.Contains(prefabsList))
-            manager.NetworkConfig.Prefabs.NetworkPrefabsLists.Add(prefabsList);
+        // Any NetworkObject-bearing prefab (Survivor, Killer) is auto-registered by NGO into
+        // Assets/DefaultNetworkPrefabs.asset, which is auto-wired into NetworkPrefabsLists already —
+        // do not add a second explicit list here, it duplicates the same hash and NGO errors on Awake.
+        // Clean up any stale/missing list reference left over from a prior misconfiguration.
+        manager.NetworkConfig.Prefabs.NetworkPrefabsLists.RemoveAll(l => l == null);
 
         if (nmGO.GetComponent<NetworkBootstrapUI>() == null)
             nmGO.AddComponent<NetworkBootstrapUI>();

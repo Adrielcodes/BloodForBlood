@@ -395,6 +395,7 @@ GameObject:
   - component: {fileID: 662667345}
   - component: {fileID: 662667344}
   - component: {fileID: 662667343}
+  - component: {fileID: 662667347}
   m_Layer: 0
   m_Name: NetworkManager
   m_TagString: Untagged
@@ -461,13 +462,14 @@ MonoBehaviour:
   NetworkConfig:
     ProtocolVersion: 0
     NetworkTransport: {fileID: 662667344}
-    PlayerPrefab: {fileID: 7852008061236801692, guid: cb9110f9bfc505e47a1dc243d86eaaa3, type: 3}
+    PlayerPrefab: {fileID: 5922500511367372419, guid: 6651ff54eb78dfa4fa68a0823a2fcfaf, type: 3}
     Prefabs:
       NetworkPrefabsLists:
       - {fileID: 11400000, guid: af4d4b3d113673548a28b168974480cf, type: 2}
+      - {fileID: 11400000, guid: 56b68027a271a5046a533d2a789e64cf, type: 2}
     TickRate: 30
     ClientConnectionBufferTimeout: 10
-    ConnectionApproval: 0
+    ConnectionApproval: 1
     ConnectionData: 
     EnableTimeResync: 0
     TimeResyncInterval: 30
@@ -502,6 +504,20 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &662667347
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 662667342}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3965d40db9feeb947bfe580093726468, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RoleAssignmentManager
+  survivorPrefab: {fileID: 5922500511367372419, guid: 6651ff54eb78dfa4fa68a0823a2fcfaf, type: 3}
+  killerPrefab: {fileID: 3814565503708566915, guid: c8770352499717747b63ecb601b4a153, type: 3}
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
