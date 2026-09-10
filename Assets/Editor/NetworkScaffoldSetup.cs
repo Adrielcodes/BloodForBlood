@@ -17,10 +17,13 @@ public static class NetworkScaffoldSetup
         GameObject killerPrefab = CreateKillerPrefab();
         CreateOrUpdateNetworkManager(survivorPrefab, killerPrefab);
 
+        GameObject weaponPickupPrefab = CreateWeaponPickupPrefab();
+        PlaceWeaponPickupInScene(weaponPickupPrefab);
+
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
 
-        Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Survivor/Killer prefabs).");
+        Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Survivor/Killer prefabs + WeaponPickup).");
     }
 
     private static void CreateGroundPlane()
@@ -72,6 +75,53 @@ public static class NetworkScaffoldSetup
         Object.DestroyImmediate(root);
 
         return AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+    }
+
+    private static GameObject CreateWeaponPickupPrefab()
+    {
+        if (!Directory.Exists(PrefabDir))
+            Directory.CreateDirectory(PrefabDir);
+
+        string prefabPath = $"{PrefabDir}/WeaponPickup.prefab";
+
+        // NetworkObject is enough — NGO auto-registers it into Assets/DefaultNetworkPrefabs.asset.
+        // Do not add an explicit NetworkPrefabsList entry (see CreateOrUpdateNetworkManager below).
+        var root = new GameObject("WeaponPickup");
+        root.AddComponent<NetworkObject>();
+
+        SphereCollider trigger = root.AddComponent<SphereCollider>();
+        trigger.isTrigger = true;
+        trigger.radius = 1.5f;
+
+        // Kinematic Rigidbody ensures OnTrigger callbacks fire reliably against the Survivor's CharacterController.
+        Rigidbody rb = root.AddComponent<Rigidbody>();
+        rb.isKinematic = true;
+        rb.useGravity = false;
+
+        root.AddComponent<WeaponPickup>();
+
+        GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        visual.name = "Visual";
+        visual.transform.SetParent(root.transform, false);
+        visual.transform.localScale = new Vector3(0.2f, 0.2f, 1f);
+        Object.DestroyImmediate(visual.GetComponent<BoxCollider>());
+
+        PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
+        Object.DestroyImmediate(root);
+
+        return AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+    }
+
+    private static void PlaceWeaponPickupInScene(GameObject prefab)
+    {
+        if (GameObject.Find("WeaponPickup") != null)
+        {
+            Debug.Log("Blood For Blood: WeaponPickup already present in scene, skipping placement.");
+            return;
+        }
+
+        GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+        instance.transform.position = new Vector3(3f, 1f, 5f);
     }
 
     private static void CreateOrUpdateNetworkManager(GameObject survivorPrefab, GameObject killerPrefab)

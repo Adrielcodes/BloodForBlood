@@ -22,6 +22,10 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
 
     protected abstract PlayerRole RoleValue { get; }
 
+    protected virtual bool CanAct => true;
+
+    protected virtual void OnOwnerTick() { }
+
     protected virtual void Awake()
     {
         controller = GetComponent<CharacterController>();
@@ -42,21 +46,26 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
         Keyboard kb = Keyboard.current;
         if (kb == null) return;
 
-        float horizontal = (kb.dKey.isPressed ? 1f : 0f) - (kb.aKey.isPressed ? 1f : 0f);
-        float vertical = (kb.wKey.isPressed ? 1f : 0f) - (kb.sKey.isPressed ? 1f : 0f);
-        bool sprintHeld = kb.leftShiftKey.isPressed;
-
-        Vector3 move = new Vector3(horizontal, 0f, vertical);
-        bool hasMoveInput = move.sqrMagnitude > 0.001f;
-        if (hasMoveInput) move.Normalize();
-
-        float speed = GetCurrentMoveSpeed(hasMoveInput, sprintHeld);
-
-        if (hasMoveInput)
+        if (CanAct)
         {
-            controller.Move(move * speed * Time.deltaTime);
-            Quaternion targetRotation = Quaternion.LookRotation(move);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+            float horizontal = (kb.dKey.isPressed ? 1f : 0f) - (kb.aKey.isPressed ? 1f : 0f);
+            float vertical = (kb.wKey.isPressed ? 1f : 0f) - (kb.sKey.isPressed ? 1f : 0f);
+            bool sprintHeld = kb.leftShiftKey.isPressed;
+
+            Vector3 move = new Vector3(horizontal, 0f, vertical);
+            bool hasMoveInput = move.sqrMagnitude > 0.001f;
+            if (hasMoveInput) move.Normalize();
+
+            float speed = GetCurrentMoveSpeed(hasMoveInput, sprintHeld);
+
+            if (hasMoveInput)
+            {
+                controller.Move(move * speed * Time.deltaTime);
+                Quaternion targetRotation = Quaternion.LookRotation(move);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+            }
+
+            OnOwnerTick();
         }
 
         verticalVelocity = controller.isGrounded ? -0.5f : verticalVelocity + gravity * Time.deltaTime;
