@@ -40,10 +40,13 @@ public static class NetworkScaffoldSetup
         ground.transform.localScale = new Vector3(5f, 1f, 5f);
     }
 
+    private const string CharactersDir = "Assets/Art/Characters";
+
     private static GameObject CreateSurvivorPrefab()
     {
         return CreateRolePrefab<SurvivorController>(
             "Survivor",
+            $"{CharactersDir}/SurvivorMale.fbx",
             Vector3.one,
             skinColor: new Color(0.92f, 0.75f, 0.64f),
             outfitColor: new Color(0.55f, 0.16f, 0.2f),
@@ -55,6 +58,7 @@ public static class NetworkScaffoldSetup
     {
         return CreateRolePrefab<KillerController>(
             "Killer",
+            $"{CharactersDir}/ZombieGirl.fbx",
             Vector3.one * 1.2f,
             skinColor: new Color(0.72f, 0.7f, 0.68f),
             outfitColor: new Color(0.12f, 0.1f, 0.12f),
@@ -63,7 +67,8 @@ public static class NetworkScaffoldSetup
     }
 
     private static GameObject CreateRolePrefab<TController>(
-        string prefabName, Vector3 visualScale, Color skinColor, Color outfitColor, Color hairColor, bool isKiller)
+        string prefabName, string modelPath, Vector3 visualScale,
+        Color skinColor, Color outfitColor, Color hairColor, bool isKiller)
         where TController : NetworkedCharacterMotor
     {
         if (!Directory.Exists(PrefabDir))
@@ -78,13 +83,37 @@ public static class NetworkScaffoldSetup
         root.AddComponent<OwnerNetworkTransform>();
         root.AddComponent<TController>();
 
-        GameObject visual = BuildHumanoidVisual(root.transform, skinColor, outfitColor, hairColor, isKiller);
+        GameObject visual = BuildModelVisual(root.transform, modelPath, prefabName);
+        if (visual == null)
+        {
+            Debug.LogWarning($"Blood For Blood: model not found at {modelPath}, using primitive placeholder for {prefabName}.");
+            visual = BuildHumanoidVisual(root.transform, skinColor, outfitColor, hairColor, isKiller);
+        }
         visual.transform.localScale = visualScale;
 
         PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
         Object.DestroyImmediate(root);
 
         return AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+    }
+
+    private static GameObject BuildModelVisual(Transform parent, string modelPath, string prefabName)
+    {
+        GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
+        if (modelAsset == null)
+            return null;
+
+        GameObject visual = (GameObject)PrefabUtility.InstantiatePrefab(modelAsset);
+        visual.name = "Visual";
+        visual.transform.SetParent(parent, false);
+        // Mixamo characters are exported with their root at the feet; CharacterController's
+        // collision capsule bottom sits at local y = -1 (default height 2, center 0), so align to that.
+        visual.transform.localPosition = new Vector3(0f, -1f, 0f);
+
+        if (visual.GetComponent<Animator>() == null)
+            visual.AddComponent<Animator>();
+
+        return visual;
     }
 
     private static GameObject BuildHumanoidVisual(Transform parent, Color skinColor, Color outfitColor, Color hairColor, bool isKiller)
