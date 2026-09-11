@@ -28,10 +28,13 @@ public static class NetworkScaffoldSetup
         GameObject weaponPickupPrefab = CreateWeaponPickupPrefab();
         PlaceWeaponPickupInScene(weaponPickupPrefab);
 
+        GameObject matchManagerPrefab = CreateMatchManagerPrefab();
+        PlaceMatchManagerInScene(matchManagerPrefab);
+
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
 
-        Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Survivor/Killer prefabs + WeaponPickup).");
+        Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Survivor/Killer prefabs + WeaponPickup + MatchManager).");
     }
 
     private static void CreateGroundPlane()
@@ -408,6 +411,37 @@ public static class NetworkScaffoldSetup
 
         GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
         instance.transform.position = new Vector3(3f, 1f, 5f);
+    }
+
+    // Second in-scene-placed NetworkObject (after WeaponPickup) — pure logic, no collider/visual
+    // needed. See MatchManager.cs for why it must live in the scene rather than spawn dynamically:
+    // it needs to exist and start listening for connections before any player object does.
+    private static GameObject CreateMatchManagerPrefab()
+    {
+        if (!Directory.Exists(PrefabDir))
+            Directory.CreateDirectory(PrefabDir);
+
+        string prefabPath = $"{PrefabDir}/MatchManager.prefab";
+
+        var root = new GameObject("MatchManager");
+        root.AddComponent<NetworkObject>();
+        root.AddComponent<MatchManager>();
+
+        PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
+        Object.DestroyImmediate(root);
+
+        return AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+    }
+
+    private static void PlaceMatchManagerInScene(GameObject prefab)
+    {
+        if (GameObject.Find("MatchManager") != null)
+        {
+            Debug.Log("Blood For Blood: MatchManager already present in scene, skipping placement.");
+            return;
+        }
+
+        PrefabUtility.InstantiatePrefab(prefab);
     }
 
     private static void CreateOrUpdateNetworkManager(GameObject survivorPrefab, GameObject killerPrefab)
