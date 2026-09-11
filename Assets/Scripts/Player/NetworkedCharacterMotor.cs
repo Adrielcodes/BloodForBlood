@@ -5,7 +5,9 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(CharacterController))]
 public abstract class NetworkedCharacterMotor : NetworkBehaviour
 {
-    [SerializeField] private float rotationSpeed = 20f;
+    // Mouse.delta is a per-frame pixel amount, not a rate — do not multiply by Time.deltaTime
+    // (that inverts the relationship with framerate and feels sluggish/inconsistent).
+    [SerializeField] private float mouseYawSensitivity = 0.2f;
     [SerializeField] private float gravity = -9.81f;
 
     private CharacterController controller;
@@ -65,16 +67,25 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
         Keyboard kb = Keyboard.current;
         if (kb == null) return;
 
+        // Mouse turns the character directly — this IS "looking around" in a third-person game
+        // with a forward-facing character. Allowed even while CanAct is false (downed) so you
+        // can still look, just not move.
+        Mouse mouse = Mouse.current;
+        if (mouse != null)
+        {
+            float yawDelta = mouse.delta.ReadValue().x * mouseYawSensitivity;
+            transform.Rotate(Vector3.up, yawDelta, Space.World);
+        }
+
         if (CanAct)
         {
             float horizontal = (kb.dKey.isPressed ? 1f : 0f) - (kb.aKey.isPressed ? 1f : 0f);
             float vertical = (kb.wKey.isPressed ? 1f : 0f) - (kb.sKey.isPressed ? 1f : 0f);
             bool sprintHeld = kb.leftShiftKey.isPressed;
 
-            // World-absolute, deliberately NOT camera-relative — the mouse/camera is a pure
-            // free-look (see ThirdPersonCameraFollow), it must never change which way WASD
-            // actually moves the character. The character turns to face wherever it's moving.
-            Vector3 move = new Vector3(horizontal, 0f, vertical);
+            // Character-relative: W always means "the direction I'm currently facing" (which
+            // the mouse controls), not a fixed world axis and not the camera's own direction.
+            Vector3 move = transform.forward * vertical + transform.right * horizontal;
             bool hasMoveInput = move.sqrMagnitude > 0.001f;
             if (hasMoveInput) move.Normalize();
 
@@ -83,8 +94,6 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
             if (hasMoveInput)
             {
                 controller.Move(move * speed * Time.deltaTime);
-                Quaternion targetRotation = Quaternion.LookRotation(move);
-                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
             }
 
             OnOwnerTick();

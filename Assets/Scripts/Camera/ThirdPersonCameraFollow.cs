@@ -1,10 +1,10 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-// Purely a free-look camera: orbits around the target's position via mouse, completely
-// decoupled from the target's own facing/movement. Movement (see NetworkedCharacterMotor) does
-// NOT read anything from this camera — moving the mouse only changes what you're looking at,
-// never which way WASD moves you.
+// Standard third-person "over the shoulder" camera: horizontal orbit always matches the
+// target's own facing (which NetworkedCharacterMotor rotates directly via mouse X — turning to
+// look IS turning the character, same as most third-person action games), while vertical mouse
+// look only tilts the camera's pitch and never affects the character itself.
 public class ThirdPersonCameraFollow : MonoBehaviour
 {
     [SerializeField] private float distance = 5f;
@@ -13,12 +13,11 @@ public class ThirdPersonCameraFollow : MonoBehaviour
     // Mouse.delta is already a per-frame pixel amount, not a rate — do NOT multiply by
     // Time.deltaTime (that was the original sensitivity bug: it made look speed inversely
     // proportional to framerate, so higher framerates felt sluggish).
-    [SerializeField] private float mouseSensitivity = 0.2f;
+    [SerializeField] private float mousePitchSensitivity = 0.2f;
     [SerializeField] private float minPitch = -20f;
     [SerializeField] private float maxPitch = 60f;
 
     private Transform target;
-    private float yaw;
     private float pitch = 15f;
 
     public void SetTarget(Transform newTarget)
@@ -27,7 +26,6 @@ public class ThirdPersonCameraFollow : MonoBehaviour
 
         if (target != null)
         {
-            yaw = target.eulerAngles.y;
             transform.position = DesiredPosition();
             transform.rotation = Quaternion.LookRotation(LookPoint() - transform.position);
         }
@@ -40,9 +38,7 @@ public class ThirdPersonCameraFollow : MonoBehaviour
         Mouse mouse = Mouse.current;
         if (mouse != null)
         {
-            Vector2 delta = mouse.delta.ReadValue();
-            yaw += delta.x * mouseSensitivity;
-            pitch -= delta.y * mouseSensitivity;
+            pitch -= mouse.delta.ReadValue().y * mousePitchSensitivity;
             pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
         }
 
@@ -52,7 +48,7 @@ public class ThirdPersonCameraFollow : MonoBehaviour
 
     private Vector3 DesiredPosition()
     {
-        Quaternion orbit = Quaternion.Euler(pitch, yaw, 0f);
+        Quaternion orbit = Quaternion.Euler(pitch, target.eulerAngles.y, 0f);
         Vector3 offset = orbit * new Vector3(0f, 0f, -distance);
         return LookPoint() + offset;
     }
