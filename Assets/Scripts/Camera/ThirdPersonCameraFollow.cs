@@ -1,27 +1,25 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-// Orbits independently of the target's own facing (driven by mouse look), the way DBD's camera
-// works — WASD then moves relative to THIS camera's yaw (see NetworkedCharacterMotor.FlatForward
-// usage), not raw world axes. Coupling movement to the target's instantaneous facing instead (the
-// old approach) meant any diagonal input made the camera visibly whip around trying to keep up.
+// Purely a free-look camera: orbits around the target's position via mouse, completely
+// decoupled from the target's own facing/movement. Movement (see NetworkedCharacterMotor) does
+// NOT read anything from this camera — moving the mouse only changes what you're looking at,
+// never which way WASD moves you.
 public class ThirdPersonCameraFollow : MonoBehaviour
 {
     [SerializeField] private float distance = 5f;
     [SerializeField] private float lookHeight = 1.5f;
     [SerializeField] private float followSmoothing = 10f;
-    [SerializeField] private float mouseSensitivity = 3f;
+    // Mouse.delta is already a per-frame pixel amount, not a rate — do NOT multiply by
+    // Time.deltaTime (that was the original sensitivity bug: it made look speed inversely
+    // proportional to framerate, so higher framerates felt sluggish).
+    [SerializeField] private float mouseSensitivity = 0.2f;
     [SerializeField] private float minPitch = -20f;
     [SerializeField] private float maxPitch = 60f;
 
     private Transform target;
     private float yaw;
     private float pitch = 15f;
-
-    // Flat (yaw-only) directions for movement — looking up/down should never tilt WASD into
-    // the ground or sky, only the camera orbit itself uses pitch.
-    public Vector3 FlatForward => Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
-    public Vector3 FlatRight => Quaternion.Euler(0f, yaw, 0f) * Vector3.right;
 
     public void SetTarget(Transform newTarget)
     {
@@ -43,8 +41,8 @@ public class ThirdPersonCameraFollow : MonoBehaviour
         if (mouse != null)
         {
             Vector2 delta = mouse.delta.ReadValue();
-            yaw += delta.x * mouseSensitivity * Time.deltaTime;
-            pitch -= delta.y * mouseSensitivity * Time.deltaTime;
+            yaw += delta.x * mouseSensitivity;
+            pitch -= delta.y * mouseSensitivity;
             pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
         }
 

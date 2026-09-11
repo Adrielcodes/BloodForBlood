@@ -12,7 +12,6 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
     private float verticalVelocity;
     private Animator animator;
     private Vector3 lastPosition;
-    private ThirdPersonCameraFollow cameraFollow;
 
     private NetworkVariable<PlayerRole> role = new NetworkVariable<PlayerRole>(
         default,
@@ -51,7 +50,7 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
             Camera cam = Camera.main;
             if (cam != null)
             {
-                cameraFollow = cam.GetComponent<ThirdPersonCameraFollow>();
+                ThirdPersonCameraFollow cameraFollow = cam.GetComponent<ThirdPersonCameraFollow>();
                 if (cameraFollow == null)
                     cameraFollow = cam.gameObject.AddComponent<ThirdPersonCameraFollow>();
                 cameraFollow.SetTarget(transform);
@@ -72,13 +71,10 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
             float vertical = (kb.wKey.isPressed ? 1f : 0f) - (kb.sKey.isPressed ? 1f : 0f);
             bool sprintHeld = kb.leftShiftKey.isPressed;
 
-            // Camera-relative, DBD-style: WASD moves relative to where the (mouse-orbited)
-            // camera is currently facing, not raw world axes — the camera's yaw is independent
-            // of the character's own facing, so diagonal input (e.g. W+D) no longer fights the
-            // camera trying to stay behind an instantly-snapping facing direction.
-            Vector3 camForward = cameraFollow != null ? cameraFollow.FlatForward : transform.forward;
-            Vector3 camRight = cameraFollow != null ? cameraFollow.FlatRight : transform.right;
-            Vector3 move = camForward * vertical + camRight * horizontal;
+            // World-absolute, deliberately NOT camera-relative — the mouse/camera is a pure
+            // free-look (see ThirdPersonCameraFollow), it must never change which way WASD
+            // actually moves the character. The character turns to face wherever it's moving.
+            Vector3 move = new Vector3(horizontal, 0f, vertical);
             bool hasMoveInput = move.sqrMagnitude > 0.001f;
             if (hasMoveInput) move.Normalize();
 
