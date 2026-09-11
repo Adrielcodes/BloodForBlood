@@ -4,8 +4,8 @@ using UnityEngine.InputSystem;
 
 public class SurvivorController : NetworkedCharacterMotor
 {
-    [SerializeField] private float walkSpeed = 5f;
-    [SerializeField] private float sprintSpeed = 8f;
+    [SerializeField] private float walkSpeed = 3.5f;
+    [SerializeField] private float sprintSpeed = 5.5f;
     [SerializeField] private float maxStamina = 100f;
     [SerializeField] private float staminaDrainPerSecond = 25f;
     [SerializeField] private float staminaRegenPerSecond = 15f;

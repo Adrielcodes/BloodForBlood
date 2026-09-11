@@ -5,7 +5,12 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(CharacterController))]
 public abstract class NetworkedCharacterMotor : NetworkBehaviour
 {
-    [SerializeField] private float rotationSpeed = 10f;
+    // Movement translation uses the raw WASD world-direction directly, independent of current
+    // facing — only the visual rotation Slerps to catch up. At the old value (10) that catch-up
+    // lagged noticeably behind fast direction changes, so the model visibly swept through a wide
+    // arc trying to catch up to where it was already moving ("big turns"). Higher value keeps
+    // facing tightly locked to the actual movement direction instead.
+    [SerializeField] private float rotationSpeed = 20f;
     [SerializeField] private float gravity = -9.81f;
 
     private CharacterController controller;

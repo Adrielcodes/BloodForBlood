@@ -4,7 +4,10 @@ using UnityEngine.InputSystem;
 
 public class KillerController : NetworkedCharacterMotor
 {
-    [SerializeField] private float killerMoveSpeed = 9f;
+    // ~1.15x Survivor's walkSpeed (3.5) — matches Dead by Daylight's real killer:survivor
+    // base-speed ratio (4.6 vs 4.0 m/s), so the Killer is always a bit faster chasing normally,
+    // while a sprinting Survivor (5.5) can still briefly outrun them.
+    [SerializeField] private float killerMoveSpeed = 4f;
 
     [SerializeField] private int maxHealth = 100;
     [SerializeField] private float attackForwardOffset = 1.5f;
