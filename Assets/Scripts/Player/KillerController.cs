@@ -19,6 +19,7 @@ public class KillerController : NetworkedCharacterMotor
     private float lastAttackServerTime = float.NegativeInfinity;
 
     public NetworkVariable<int> Health => health;
+    public int MaxHealth => maxHealth;
 
     protected override PlayerRole RoleValue => PlayerRole.Killer;
 
@@ -29,6 +30,16 @@ public class KillerController : NetworkedCharacterMotor
             maxHealth,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
+    }
+
+    public override void OnNetworkSpawn()
+    {
+        base.OnNetworkSpawn();
+
+        if (IsOwner)
+        {
+            KillerHudController.Create(this);
+        }
     }
 
     protected override float GetCurrentMoveSpeed(bool hasMoveInput, bool sprintHeld)
