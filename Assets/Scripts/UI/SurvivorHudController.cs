@@ -9,6 +9,7 @@ public class SurvivorHudController : MonoBehaviour
     private SurvivorController survivor;
     private Image healthFill;
     private Image staminaFill;
+    private static Sprite solidSprite;
 
     public static SurvivorHudController Create(SurvivorController target)
     {
@@ -26,6 +27,23 @@ public class SurvivorHudController : MonoBehaviour
         hud.Bind(target);
 
         return hud;
+    }
+
+    // Image.Type.Filled generates its fill mesh from the assigned Sprite's rect/UV data — with
+    // no Sprite (the default when an Image is added purely via code), that geometry computation
+    // has nothing to work from and the Image just renders as a full solid rectangle regardless
+    // of fillAmount. This is why fillAmount was updating correctly in data (verified directly)
+    // but never visibly changing on screen. A plain 1x1 white sprite is enough to fix it.
+    private static Sprite GetSolidSprite()
+    {
+        if (solidSprite == null)
+        {
+            var texture = new Texture2D(1, 1);
+            texture.SetPixel(0, 0, Color.white);
+            texture.Apply();
+            solidSprite = Sprite.Create(texture, new Rect(0f, 0f, 1f, 1f), new Vector2(0.5f, 0.5f));
+        }
+        return solidSprite;
     }
 
     private Image CreateBar(Transform parent, string label, Vector2 anchoredPosition, Color fillColor)
@@ -49,6 +67,7 @@ public class SurvivorHudController : MonoBehaviour
         fillRect.offsetMax = new Vector2(-2f, -2f);
 
         Image fillImage = fill.GetComponent<Image>();
+        fillImage.sprite = GetSolidSprite();
         fillImage.color = fillColor;
         fillImage.type = Image.Type.Filled;
         fillImage.fillMethod = Image.FillMethod.Horizontal;
