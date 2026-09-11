@@ -9,6 +9,12 @@ public class SurvivorController : NetworkedCharacterMotor
     [SerializeField] private float maxStamina = 100f;
     [SerializeField] private float staminaDrainPerSecond = 25f;
     [SerializeField] private float staminaRegenPerSecond = 15f;
+    // Once stamina hits 0, sprint stays locked out until it regenerates back up to at least
+    // this much — without a gap like this, the instant stamina ticks up even slightly above 0,
+    // sprint re-enables and drains it straight back to 0 next frame, flip-flopping every single
+    // frame (sprintSpeed/walkSpeed oscillating 60x/sec) for as long as Shift+move is held with
+    // no stamina. That was the actual cause of the reported jitter.
+    [SerializeField] private float minStaminaToResumeSprint = 15f;
 
     [SerializeField] private int hitsToDown = 3;
 
@@ -27,6 +33,7 @@ public class SurvivorController : NetworkedCharacterMotor
 
     private Transform visualTransform;
     private float lastWeaponAttackServerTime = float.NegativeInfinity;
+    private bool staminaExhausted;
 
     public NetworkVariable<float> Stamina => stamina;
     public NetworkVariable<int> HitsTaken => hitsTaken;
@@ -69,11 +76,20 @@ public class SurvivorController : NetworkedCharacterMotor
 
     protected override float GetCurrentMoveSpeed(bool hasMoveInput, bool sprintHeld)
     {
-        bool isSprinting = sprintHeld && hasMoveInput && stamina.Value > 0f;
+        if (staminaExhausted && stamina.Value >= minStaminaToResumeSprint)
+        {
+            staminaExhausted = false;
+        }
+
+        bool isSprinting = sprintHeld && hasMoveInput && !staminaExhausted && stamina.Value > 0f;
 
         if (isSprinting)
         {
             SetStamina(Mathf.Max(0f, stamina.Value - staminaDrainPerSecond * Time.deltaTime));
+            if (stamina.Value <= 0f)
+            {
+                staminaExhausted = true;
+            }
             return sprintSpeed;
         }
 
