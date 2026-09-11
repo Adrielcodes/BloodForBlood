@@ -44,10 +44,12 @@ public static class NetworkScaffoldSetup
 
     private static GameObject CreateSurvivorPrefab()
     {
+        // SurvivorMale.fbx imports ~4.15 units tall natively (measured via Unity_RunCommand bounds
+        // check) — 0.446 brings it to ~1.85 units, matching the CharacterController's ~2-unit height.
         return CreateRolePrefab<SurvivorController>(
             "Survivor",
             $"{CharactersDir}/SurvivorMale.fbx",
-            Vector3.one,
+            Vector3.one * 0.446f,
             skinColor: new Color(0.92f, 0.75f, 0.64f),
             outfitColor: new Color(0.55f, 0.16f, 0.2f),
             hairColor: new Color(0.25f, 0.15f, 0.1f),
@@ -56,10 +58,12 @@ public static class NetworkScaffoldSetup
 
     private static GameObject CreateKillerPrefab()
     {
+        // ZombieGirl.fbx imports ~2.14 units tall natively (measured via Unity_RunCommand bounds
+        // check) — 0.96 brings it to ~2.05 units, slightly taller than Survivor.
         return CreateRolePrefab<KillerController>(
             "Killer",
             $"{CharactersDir}/ZombieGirl.fbx",
-            Vector3.one * 1.2f,
+            Vector3.one * 0.96f,
             skinColor: new Color(0.72f, 0.7f, 0.68f),
             outfitColor: new Color(0.12f, 0.1f, 0.12f),
             hairColor: new Color(0.05f, 0.05f, 0.05f),
