@@ -32,6 +32,8 @@ public class SurvivorController : NetworkedCharacterMotor
     public NetworkVariable<int> HitsTaken => hitsTaken;
     public NetworkVariable<bool> IsDowned => isDowned;
     public NetworkVariable<bool> HasWeapon => hasWeapon;
+    public float MaxStamina => maxStamina;
+    public int HitsToDown => hitsToDown;
 
     protected override PlayerRole RoleValue => PlayerRole.Survivor;
 
@@ -52,6 +54,11 @@ public class SurvivorController : NetworkedCharacterMotor
         base.OnNetworkSpawn();
         isDowned.OnValueChanged += HandleDownedChanged;
         HandleDownedChanged(false, isDowned.Value);
+
+        if (IsOwner)
+        {
+            SurvivorHudController.Create(this);
+        }
     }
 
     private void HandleDownedChanged(bool previous, bool current)
