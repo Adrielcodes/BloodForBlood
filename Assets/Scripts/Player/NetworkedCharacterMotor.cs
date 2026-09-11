@@ -46,6 +46,21 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
         {
             role.Value = RoleValue;
         }
+
+        // Each client only ever sees its own local Camera.main, so gating this on IsOwner
+        // correctly means "only the locally controlled character gets followed" without any
+        // networked camera state — every other client's view is unaffected.
+        if (IsOwner)
+        {
+            Camera cam = Camera.main;
+            if (cam != null)
+            {
+                ThirdPersonCameraFollow follow = cam.GetComponent<ThirdPersonCameraFollow>();
+                if (follow == null)
+                    follow = cam.gameObject.AddComponent<ThirdPersonCameraFollow>();
+                follow.SetTarget(transform);
+            }
+        }
     }
 
     private void Update()

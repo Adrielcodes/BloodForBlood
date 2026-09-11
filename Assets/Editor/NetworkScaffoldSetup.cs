@@ -231,9 +231,13 @@ public static class NetworkScaffoldSetup
 
         var blendTree = new BlendTree { name = "Locomotion", blendType = BlendTreeType.Simple1D, blendParameter = "Speed" };
         AssetDatabase.AddObjectToAsset(blendTree, controller);
+        // useAutomaticThresholds defaults to true and silently normalizes children to evenly
+        // spaced [0,1] thresholds, discarding the explicit ones passed to AddChild below — must
+        // be disabled for the real speed values (walkSpeed/sprintSpeed) to matter.
+        blendTree.useAutomaticThresholds = false;
         blendTree.AddChild(idleClip, 0f);
-        blendTree.AddChild(walkClip, 5f);
-        blendTree.AddChild(runClip, 9f);
+        blendTree.AddChild(walkClip, 3.5f);
+        blendTree.AddChild(runClip, 5.5f);
 
         AnimatorState locomotionState = stateMachine.AddState("Locomotion");
         locomotionState.motion = blendTree;
