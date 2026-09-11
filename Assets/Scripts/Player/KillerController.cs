@@ -23,20 +23,6 @@ public class KillerController : NetworkedCharacterMotor
 
     protected override PlayerRole RoleValue => PlayerRole.Killer;
 
-    // Close, shoulder-height, shallow-pitch camera — reference: a tight over-the-shoulder Killer
-    // POV from another asymmetric horror game, much closer and more level than the default
-    // pulled-back/downward-angled Survivor framing (5 / 1.5 / 15), for a more intense,
-    // claustrophobic feel while chasing.
-    // lookHeight is an offset ABOVE THE CHARACTER'S PIVOT, not above the ground — and
-    // CharacterController.center=0 puts that pivot at roughly hip/waist height (the capsule's
-    // vertical center), not the feet. Survivor's 1.5 already aims the look point above the head,
-    // which reads fine pulled back at distance 5/pitch 15, but at Killer-close range the same
-    // offset put the camera floating near head-height looking almost level — showing far too much
-    // sky/ground instead of the character. 0.55 puts the look point around chest/shoulder height.
-    protected override float CameraDistance => 1.8f;
-    protected override float CameraLookHeight => 0.55f;
-    protected override float CameraInitialPitch => 2f;
-
     protected override void Awake()
     {
         base.Awake();

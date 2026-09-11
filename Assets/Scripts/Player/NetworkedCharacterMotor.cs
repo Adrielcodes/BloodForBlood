@@ -30,12 +30,14 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
 
     protected virtual void OnOwnerTick() { }
 
-    // Camera framing hooks — defaults match ThirdPersonCameraFollow's own original field
-    // defaults, so SurvivorController (which doesn't override these) is unaffected. KillerController
-    // overrides these for a closer, lower-pitch, more intense/claustrophobic view.
-    protected virtual float CameraDistance => 5f;
-    protected virtual float CameraLookHeight => 1.5f;
-    protected virtual float CameraInitialPitch => 15f;
+    // Camera framing hooks — shared close/shoulder-height default for both roles (see
+    // KillerController's original tuning notes for why lookHeight is small: it's an offset above
+    // the character's pivot/hip height, not the ground, so a small value already reaches
+    // chest/shoulder height). Neither role currently overrides these; a future role-specific look
+    // can still override per-role via these same hooks.
+    protected virtual float CameraDistance => 1.8f;
+    protected virtual float CameraLookHeight => 0.55f;
+    protected virtual float CameraInitialPitch => 2f;
 
     protected virtual void Awake()
     {
