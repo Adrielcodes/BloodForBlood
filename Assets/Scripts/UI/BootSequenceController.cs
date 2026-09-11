@@ -12,9 +12,14 @@ public class BootSequenceController : MonoBehaviour
     [SerializeField] private float titleDuration = 2f;
     [SerializeField] private string gameplaySceneName = "SampleScene";
 
-    private GameObject studioScreen;
-    private GameObject titleScreen;
-    private GameObject menuScreen;
+    // Must be [SerializeField]: Configure() below is only ever called once, at editor-build time
+    // in NetworkScaffoldSetup.CreateBootScene(), before the scene is saved to disk. A plain
+    // private field without this attribute isn't serialized, so the assignment would be silently
+    // lost on save — these would all read back null when the scene loads at Play mode start,
+    // which is exactly what happened (NullReferenceException in RunSequence()).
+    [SerializeField] private GameObject studioScreen;
+    [SerializeField] private GameObject titleScreen;
+    [SerializeField] private GameObject menuScreen;
 
     public void Configure(GameObject studio, GameObject title, GameObject menu)
     {

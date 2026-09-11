@@ -6,6 +6,8 @@ using UnityEditor;
 using UnityEditor.Animations;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
@@ -42,8 +44,24 @@ public static class NetworkScaffoldSetup
         EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
 
         CreateBootScene();
+        SetPlayModeStartScene();
 
         Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Survivor/Killer prefabs + WeaponPickup + MatchManager + Boot scene).");
+    }
+
+    // EditorSceneManager.playModeStartScene makes the Editor's Play button always launch from
+    // Boot.unity regardless of which scene is currently open — without this, pressing Play while
+    // SampleScene is open (the normal dev workflow, e.g. testing gameplay directly) skips the
+    // boot/title/menu sequence entirely, since Unity otherwise just plays whatever scene is open.
+    // This is a local Editor preference, not a serialized project asset — it doesn't survive a
+    // fresh clone or reliably survive an Editor restart, so it's set here every Setup() run
+    // instead of being a one-time manual step.
+    private static void SetPlayModeStartScene()
+    {
+        SceneAsset bootAsset = AssetDatabase.LoadAssetAtPath<SceneAsset>("Assets/Scenes/Boot.unity");
+        if (bootAsset == null) return;
+
+        EditorSceneManager.playModeStartScene = bootAsset;
     }
 
     private static void CreateGroundPlane()
@@ -716,6 +734,23 @@ public static class NetworkScaffoldSetup
 
         Scene bootScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
         EditorSceneManager.SetActiveScene(bootScene);
+
+        // NewSceneSetup.EmptyScene means truly empty — no Camera, no Light. A ScreenSpaceOverlay
+        // Canvas doesn't strictly need a Camera to render its own UI, but with zero cameras in the
+        // scene the Game view has nothing to render to at all ("Display 1 No cameras rendering").
+        var cameraGO = new GameObject("Main Camera");
+        cameraGO.tag = "MainCamera";
+        Camera bootCamera = cameraGO.AddComponent<Camera>();
+        bootCamera.clearFlags = CameraClearFlags.SolidColor;
+        bootCamera.backgroundColor = Color.black;
+
+        // GraphicRaycaster (below, on the Canvas) needs an EventSystem in the scene to route
+        // clicks to UI at all — without one, the Play button would render but never respond to
+        // input. InputSystemUIInputModule (not the legacy StandaloneInputModule) since this
+        // project runs exclusively on the new Input System (see CLAUDE.md Gotchas).
+        var eventSystemGO = new GameObject("EventSystem");
+        eventSystemGO.AddComponent<EventSystem>();
+        eventSystemGO.AddComponent<InputSystemUIInputModule>();
 
         var canvasGO = new GameObject("BootCanvas");
         Canvas canvas = canvasGO.AddComponent<Canvas>();
