@@ -27,6 +27,17 @@ public class ThirdPersonCameraFollow : MonoBehaviour
     public Vector3 FlatForward => Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
     public Vector3 FlatRight => Quaternion.Euler(0f, yaw, 0f) * Vector3.right;
 
+    // Lets each role tune its own framing (Killer wants a close, low, shoulder-height view for a
+    // more intense/claustrophobic feel; Survivor keeps the existing pulled-back default) without
+    // touching the orbit/camera-relative-movement logic above, which is locked in — see
+    // NetworkedCharacterMotor.CameraDistance/CameraLookHeight/CameraInitialPitch.
+    public void Configure(float newDistance, float newLookHeight, float initialPitch)
+    {
+        distance = newDistance;
+        lookHeight = newLookHeight;
+        pitch = initialPitch;
+    }
+
     public void SetTarget(Transform newTarget)
     {
         target = newTarget;

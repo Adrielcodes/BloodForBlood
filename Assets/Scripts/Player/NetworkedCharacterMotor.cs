@@ -30,6 +30,13 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
 
     protected virtual void OnOwnerTick() { }
 
+    // Camera framing hooks — defaults match ThirdPersonCameraFollow's own original field
+    // defaults, so SurvivorController (which doesn't override these) is unaffected. KillerController
+    // overrides these for a closer, lower-pitch, more intense/claustrophobic view.
+    protected virtual float CameraDistance => 5f;
+    protected virtual float CameraLookHeight => 1.5f;
+    protected virtual float CameraInitialPitch => 15f;
+
     protected virtual void Awake()
     {
         controller = GetComponent<CharacterController>();
@@ -55,6 +62,7 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
                 cameraFollow = cam.GetComponent<ThirdPersonCameraFollow>();
                 if (cameraFollow == null)
                     cameraFollow = cam.gameObject.AddComponent<ThirdPersonCameraFollow>();
+                cameraFollow.Configure(CameraDistance, CameraLookHeight, CameraInitialPitch);
                 cameraFollow.SetTarget(transform);
             }
 
