@@ -778,7 +778,14 @@ public static class NetworkScaffoldSetup
         controller.Configure(studioScreen, titleScreen, menuScreen);
 
         Button playButton = menuScreen.GetComponentInChildren<Button>(true);
-        playButton.onClick.AddListener(controller.OnPlayPressed);
+        // Button.onClick.AddListener() from editor script code only registers a non-persistent
+        // (runtime-only) delegate — UnityEvent's serialized "persistent calls" list is a separate
+        // thing, and that's what actually survives a scene save. Without this, the click handler
+        // silently vanishes on save/reload: the button still renders and is clickable, it just
+        // does nothing when clicked. UnityEventTools.AddPersistentListener is the editor-time API
+        // for actually baking a serialized call into the scene, same as wiring it up by hand in
+        // the Inspector would.
+        UnityEditor.Events.UnityEventTools.AddPersistentListener(playButton.onClick, controller.OnPlayPressed);
 
         if (!Directory.Exists("Assets/Scenes"))
             Directory.CreateDirectory("Assets/Scenes");
