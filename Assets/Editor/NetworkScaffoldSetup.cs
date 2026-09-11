@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
@@ -8,10 +9,13 @@ using UnityEngine;
 public static class NetworkScaffoldSetup
 {
     private const string PrefabDir = "Assets/Prefabs";
+    private const string CharacterMaterialsDir = "Assets/Art/Characters/Materials";
 
     [MenuItem("Blood For Blood/Setup Network Scaffolding")]
     public static void Setup()
     {
+        AssignCharacterPlaceholderMaterials();
+
         CreateGroundPlane();
         GameObject survivorPrefab = CreateSurvivorPrefab();
         GameObject killerPrefab = CreateKillerPrefab();
@@ -41,6 +45,72 @@ public static class NetworkScaffoldSetup
     }
 
     private const string CharactersDir = "Assets/Art/Characters";
+
+    // Mixamo's "Without Skin" export leaves every material a plain white RGBA(1,1,1,1) with no
+    // diffuse texture. These downloaded FBX files have no skin, so we assign flat placeholder
+    // colors per material slot instead — combined with the models' own sculpted mesh geometry
+    // (face, hair strands, Zombie Girl's decay patches) this reads far better than plain white.
+    private static void AssignCharacterPlaceholderMaterials()
+    {
+        var survivorPalette = new Dictionary<string, Color>
+        {
+            { "Bodymat", new Color(0.92f, 0.75f, 0.64f) },
+            { "Hairmat", new Color(0.25f, 0.15f, 0.1f) },
+            { "Eyelashmat", new Color(0.05f, 0.05f, 0.05f) },
+            { "Topmat", new Color(0.55f, 0.16f, 0.2f) },
+            { "Bottommat", new Color(0.22f, 0.24f, 0.3f) },
+            { "Shoesmat", new Color(0.12f, 0.09f, 0.07f) },
+        };
+
+        var killerPalette = new Dictionary<string, Color>
+        {
+            { "ZombieGirl_body_Material", new Color(0.6f, 0.66f, 0.56f) },
+            { "ZombieGirl_Material", new Color(0.12f, 0.1f, 0.12f) },
+        };
+
+        ApplyMaterialPalette($"{CharactersDir}/SurvivorMale.fbx", survivorPalette);
+        ApplyMaterialPalette($"{CharactersDir}/ZombieGirl.fbx", killerPalette);
+    }
+
+    private static void ApplyMaterialPalette(string fbxPath, Dictionary<string, Color> palette)
+    {
+        var importer = (ModelImporter)AssetImporter.GetAtPath(fbxPath);
+        if (importer == null)
+        {
+            Debug.LogWarning($"Blood For Blood: model not found at {fbxPath}, skipping material palette.");
+            return;
+        }
+
+        if (!Directory.Exists(CharacterMaterialsDir))
+            Directory.CreateDirectory(CharacterMaterialsDir);
+
+        var seen = new HashSet<string>();
+        foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(fbxPath))
+        {
+            if (asset is not Material mat || !seen.Add(mat.name))
+                continue;
+
+            if (!palette.TryGetValue(mat.name, out Color color))
+                continue;
+
+            string matPath = $"{CharacterMaterialsDir}/{Path.GetFileNameWithoutExtension(fbxPath)}_{mat.name}.mat";
+            Material placeholder = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+            if (placeholder == null)
+            {
+                Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+                placeholder = new Material(shader) { color = color };
+                AssetDatabase.CreateAsset(placeholder, matPath);
+            }
+            else
+            {
+                placeholder.color = color;
+            }
+
+            importer.AddRemap(new AssetImporter.SourceAssetIdentifier(typeof(Material), mat.name), placeholder);
+        }
+
+        importer.SaveAndReimport();
+    }
 
     private static GameObject CreateSurvivorPrefab()
     {

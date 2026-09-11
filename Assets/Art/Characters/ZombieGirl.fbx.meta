@@ -3,7 +3,17 @@ guid: ea2bce0ff24eb7348a93c58bf788d153
 ModelImporter:
   serializedVersion: 24600
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: ZombieGirl_Material
+    second: {fileID: 2100000, guid: f339daf5be339014cb0d7655bc73f7df, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: ZombieGirl_body_Material
+    second: {fileID: 2100000, guid: 50d69d54d2e941d4194622a841cedfbf, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
