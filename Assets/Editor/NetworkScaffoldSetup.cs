@@ -40,13 +40,16 @@ public static class NetworkScaffoldSetup
         GameObject matchManagerPrefab = CreateMatchManagerPrefab();
         PlaceMatchManagerInScene(matchManagerPrefab);
 
+        GameObject restoreBeaconPrefab = CreateRestoreBeaconPrefab();
+        PlaceRestoreBeaconsInScene(restoreBeaconPrefab);
+
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
 
         CreateBootScene();
         SetPlayModeStartScene();
 
-        Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Survivor/Killer prefabs + WeaponPickup + MatchManager + Boot scene).");
+        Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Survivor/Killer prefabs + WeaponPickup + MatchManager + RestoreBeacon x4 + Boot scene).");
     }
 
     // EditorSceneManager.playModeStartScene makes the Editor's Play button always launch from
@@ -93,6 +96,11 @@ public static class NetworkScaffoldSetup
 
         BuildPerimeterWalls(root.transform);
         BuildObstacleProps(root.transform);
+
+        // Same trap as WeaponPickup's sword and the menu backdrop: CreateSolidPart/CreateColorMaterial
+        // return plain in-memory Materials, which can't be serialized into the saved scene — without
+        // this, the walls/props would render magenta ("missing material") after a reload.
+        PersistRuntimeMaterials(root);
     }
 
     private static void BuildPerimeterWalls(Transform parent)
@@ -645,18 +653,25 @@ public static class NetworkScaffoldSetup
     // save — which Unity renders as its default magenta "missing material" fallback. Swap each
     // renderer's material for a real persisted .mat asset (reused by name across re-runs) before
     // the prefab gets saved.
-    private static void PersistRuntimeMaterials(GameObject root)
+    private static void PersistRuntimeMaterials(GameObject root, string materialsDir = "Assets/Art/Weapons/Materials")
     {
-        const string materialsDir = "Assets/Art/Weapons/Materials";
-        if (!AssetDatabase.IsValidFolder("Assets/Art/Weapons"))
-            AssetDatabase.CreateFolder("Assets/Art", "Weapons");
         if (!AssetDatabase.IsValidFolder(materialsDir))
-            AssetDatabase.CreateFolder("Assets/Art/Weapons", "Materials");
+        {
+            string parent = Path.GetDirectoryName(materialsDir)?.Replace('\\', '/');
+            string leaf = Path.GetFileName(materialsDir);
+            if (!string.IsNullOrEmpty(parent) && !AssetDatabase.IsValidFolder(parent))
+                AssetDatabase.CreateFolder(Path.GetDirectoryName(parent)?.Replace('\\', '/'), Path.GetFileName(parent));
+            AssetDatabase.CreateFolder(parent, leaf);
+        }
 
         foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
         {
             Material runtimeMat = renderer.sharedMaterial;
             if (runtimeMat == null) continue;
+
+            // Already a real asset (e.g. a character's remapped skin material, picked up because
+            // it happens to sit under this root too) — leave it alone, don't clone a duplicate.
+            if (AssetDatabase.Contains(runtimeMat)) continue;
 
             string assetPath = $"{materialsDir}/{runtimeMat.name}.mat";
             Material persisted = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
@@ -680,6 +695,72 @@ public static class NetworkScaffoldSetup
 
         GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
         instance.transform.position = new Vector3(3f, 1f, 5f);
+    }
+
+    // The Restore Beacon objective: 4 in-scene NetworkObjects (same in-scene-placed pattern as
+    // WeaponPickup/MatchManager — no NetworkPrefabsList entry needed) spread across the map
+    // quadrants, clear of the spawn line, WeaponPickup, and the obstacle props. RestoreBeacon.cs
+    // owns all the interaction/skill-check/beam logic; this just builds the placeholder pillar
+    // visual (kept blocking via CreateSolidPart, matching the environment props) and the trigger.
+    private static GameObject CreateRestoreBeaconPrefab()
+    {
+        if (!Directory.Exists(PrefabDir))
+            Directory.CreateDirectory(PrefabDir);
+
+        string prefabPath = $"{PrefabDir}/RestoreBeacon.prefab";
+
+        var root = new GameObject("RestoreBeacon");
+        root.AddComponent<NetworkObject>();
+
+        SphereCollider trigger = root.AddComponent<SphereCollider>();
+        trigger.isTrigger = true;
+        trigger.radius = 2.5f;
+
+        Rigidbody rb = root.AddComponent<Rigidbody>();
+        rb.isKinematic = true;
+        rb.useGravity = false;
+
+        BuildBeaconVisual(root.transform);
+        root.AddComponent<RestoreBeacon>();
+
+        PersistRuntimeMaterials(root, "Assets/Art/Environment/Materials");
+
+        PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
+        Object.DestroyImmediate(root);
+
+        return AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+    }
+
+    private static void BuildBeaconVisual(Transform parent)
+    {
+        Material stoneMat = CreateColorMaterial("BeaconStoneMat", new Color(0.3f, 0.28f, 0.26f));
+        Material bowlMat = CreateColorMaterial("BeaconBowlMat", new Color(0.45f, 0.42f, 0.3f));
+
+        CreateSolidPart(PrimitiveType.Cylinder, parent, stoneMat, "Post", new Vector3(0f, 1f, 0f), new Vector3(0.3f, 1f, 0.3f));
+        CreateSolidPart(PrimitiveType.Sphere, parent, bowlMat, "Bowl", new Vector3(0f, 2f, 0f), new Vector3(0.6f, 0.35f, 0.6f));
+    }
+
+    private static void PlaceRestoreBeaconsInScene(GameObject prefab)
+    {
+        if (GameObject.Find("RestoreBeacon") != null)
+        {
+            Debug.Log("Blood For Blood: RestoreBeacons already present in scene, skipping placement.");
+            return;
+        }
+
+        Vector3[] positions =
+        {
+            new Vector3(18f, 1f, 18f),
+            new Vector3(-18f, 1f, 18f),
+            new Vector3(18f, 1f, -18f),
+            new Vector3(-18f, 1f, -18f),
+        };
+
+        foreach (Vector3 position in positions)
+        {
+            GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            instance.transform.position = position;
+        }
     }
 
     // Second in-scene-placed NetworkObject (after WeaponPickup) — pure logic, no collider/visual
@@ -735,14 +816,19 @@ public static class NetworkScaffoldSetup
         Scene bootScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
         EditorSceneManager.SetActiveScene(bootScene);
 
+        var environmentRoot = new GameObject("MenuEnvironment");
+        BuildMenuEnvironment(environmentRoot.transform);
+
         // NewSceneSetup.EmptyScene means truly empty — no Camera, no Light. A ScreenSpaceOverlay
         // Canvas doesn't strictly need a Camera to render its own UI, but with zero cameras in the
         // scene the Game view has nothing to render to at all ("Display 1 No cameras rendering").
+        // Framed on the showcase character built by BuildMenuEnvironment above.
         var cameraGO = new GameObject("Main Camera");
         cameraGO.tag = "MainCamera";
         Camera bootCamera = cameraGO.AddComponent<Camera>();
-        bootCamera.clearFlags = CameraClearFlags.SolidColor;
-        bootCamera.backgroundColor = Color.black;
+        bootCamera.clearFlags = CameraClearFlags.Skybox;
+        cameraGO.transform.position = new Vector3(-1.6f, 1.75f, -1.6f);
+        cameraGO.transform.rotation = Quaternion.Euler(6f, 32f, 0f);
 
         // GraphicRaycaster (below, on the Canvas) needs an EventSystem in the scene to route
         // clicks to UI at all — without one, the Play button would render but never respond to
@@ -760,6 +846,8 @@ public static class NetworkScaffoldSetup
         scaler.referenceResolution = new Vector2(1920f, 1080f);
         canvasGO.AddComponent<GraphicRaycaster>();
 
+        // Solid black full-screen cover for the studio/title cards only — BootSequenceController
+        // hides this once the menu appears, revealing the 3D backdrop built above.
         var background = new GameObject("Background", typeof(Image));
         background.transform.SetParent(canvasGO.transform, false);
         RectTransform bgRect = background.GetComponent<RectTransform>();
@@ -775,9 +863,8 @@ public static class NetworkScaffoldSetup
 
         var controllerGO = new GameObject("BootSequenceController");
         BootSequenceController controller = controllerGO.AddComponent<BootSequenceController>();
-        controller.Configure(studioScreen, titleScreen, menuScreen);
+        controller.Configure(studioScreen, titleScreen, menuScreen, background);
 
-        Button playButton = menuScreen.GetComponentInChildren<Button>(true);
         // Button.onClick.AddListener() from editor script code only registers a non-persistent
         // (runtime-only) delegate — UnityEvent's serialized "persistent calls" list is a separate
         // thing, and that's what actually survives a scene save. Without this, the click handler
@@ -785,7 +872,11 @@ public static class NetworkScaffoldSetup
         // does nothing when clicked. UnityEventTools.AddPersistentListener is the editor-time API
         // for actually baking a serialized call into the scene, same as wiring it up by hand in
         // the Inspector would.
+        Button playButton = menuScreen.transform.Find("LeftPanel/PlayButton").GetComponent<Button>();
         UnityEditor.Events.UnityEventTools.AddPersistentListener(playButton.onClick, controller.OnPlayPressed);
+
+        Button quitButton = menuScreen.transform.Find("LeftPanel/QuitButton").GetComponent<Button>();
+        UnityEditor.Events.UnityEventTools.AddPersistentListener(quitButton.onClick, controller.OnQuitPressed);
 
         if (!Directory.Exists("Assets/Scenes"))
             Directory.CreateDirectory("Assets/Scenes");
@@ -828,6 +919,9 @@ public static class NetworkScaffoldSetup
         return screen;
     }
 
+    // DBD/Home Sweet Home-style layout: a semi-transparent left-side panel over a 3D backdrop
+    // (see BuildMenuEnvironment) rather than a full-screen overlay — the showcase character stays
+    // visible on the right of frame.
     private static GameObject BuildMenuScreen(Transform parent)
     {
         var screen = new GameObject("MenuScreen");
@@ -838,47 +932,138 @@ public static class NetworkScaffoldSetup
         screenRect.offsetMin = Vector2.zero;
         screenRect.offsetMax = Vector2.zero;
 
+        var panel = new GameObject("LeftPanel", typeof(Image));
+        panel.transform.SetParent(screen.transform, false);
+        RectTransform panelRect = panel.GetComponent<RectTransform>();
+        panelRect.anchorMin = new Vector2(0f, 0f);
+        panelRect.anchorMax = new Vector2(0f, 1f);
+        panelRect.pivot = new Vector2(0f, 0.5f);
+        panelRect.sizeDelta = new Vector2(520f, 0f);
+        panelRect.anchoredPosition = Vector2.zero;
+        panel.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.55f);
+
         var titleGO = new GameObject("Title", typeof(Text));
-        titleGO.transform.SetParent(screen.transform, false);
+        titleGO.transform.SetParent(panel.transform, false);
         RectTransform titleRect = titleGO.GetComponent<RectTransform>();
-        titleRect.anchorMin = new Vector2(0.5f, 0.68f);
-        titleRect.anchorMax = new Vector2(0.5f, 0.68f);
-        titleRect.pivot = new Vector2(0.5f, 0.5f);
-        titleRect.sizeDelta = new Vector2(1500f, 200f);
+        titleRect.anchorMin = new Vector2(0.5f, 1f);
+        titleRect.anchorMax = new Vector2(0.5f, 1f);
+        titleRect.pivot = new Vector2(0.5f, 1f);
+        titleRect.anchoredPosition = new Vector2(0f, -70f);
+        titleRect.sizeDelta = new Vector2(480f, 160f);
         Text title = titleGO.GetComponent<Text>();
-        title.text = "BLOOD FOR BLOOD";
+        title.text = "BLOOD\nFOR BLOOD";
         title.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        title.fontSize = 60;
+        title.fontSize = 44;
         title.fontStyle = FontStyle.Bold;
-        title.alignment = TextAnchor.MiddleCenter;
-        title.color = new Color(0.8f, 0.1f, 0.1f);
+        title.alignment = TextAnchor.UpperCenter;
+        title.color = new Color(0.82f, 0.12f, 0.12f);
 
-        var buttonGO = new GameObject("PlayButton", typeof(Image), typeof(Button));
-        buttonGO.transform.SetParent(screen.transform, false);
-        RectTransform buttonRect = buttonGO.GetComponent<RectTransform>();
-        buttonRect.anchorMin = new Vector2(0.5f, 0.4f);
-        buttonRect.anchorMax = new Vector2(0.5f, 0.4f);
-        buttonRect.pivot = new Vector2(0.5f, 0.5f);
-        buttonRect.sizeDelta = new Vector2(320f, 84f);
-        buttonGO.GetComponent<Image>().color = new Color(0.5f, 0.1f, 0.1f);
-
-        var buttonTextGO = new GameObject("Text", typeof(Text));
-        buttonTextGO.transform.SetParent(buttonGO.transform, false);
-        RectTransform buttonTextRect = buttonTextGO.GetComponent<RectTransform>();
-        buttonTextRect.anchorMin = Vector2.zero;
-        buttonTextRect.anchorMax = Vector2.one;
-        buttonTextRect.offsetMin = Vector2.zero;
-        buttonTextRect.offsetMax = Vector2.zero;
-        Text buttonText = buttonTextGO.GetComponent<Text>();
-        buttonText.text = "PLAY";
-        buttonText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        buttonText.fontSize = 36;
-        buttonText.fontStyle = FontStyle.Bold;
-        buttonText.alignment = TextAnchor.MiddleCenter;
-        buttonText.color = Color.white;
+        // SETTINGS is deliberately non-interactive (dimmed, Button.interactable = false) rather
+        // than wired to a fake handler — a placeholder slot that reads as "not built yet" instead
+        // of implying a feature that doesn't exist.
+        BuildMenuButton(panel.transform, "PlayButton", "PLAY", new Vector2(0f, -280f), new Color(0.55f, 0.1f, 0.1f), true);
+        BuildMenuButton(panel.transform, "SettingsButton", "SETTINGS", new Vector2(0f, -360f), new Color(0.2f, 0.2f, 0.22f), false);
+        BuildMenuButton(panel.transform, "QuitButton", "QUIT", new Vector2(0f, -440f), new Color(0.3f, 0.12f, 0.12f), true);
 
         screen.SetActive(false);
         return screen;
+    }
+
+    private static void BuildMenuButton(Transform parent, string name, string label, Vector2 anchoredPosition, Color color, bool interactable)
+    {
+        var buttonGO = new GameObject(name, typeof(Image), typeof(Button));
+        buttonGO.transform.SetParent(parent, false);
+        RectTransform buttonRect = buttonGO.GetComponent<RectTransform>();
+        buttonRect.anchorMin = new Vector2(0.5f, 1f);
+        buttonRect.anchorMax = new Vector2(0.5f, 1f);
+        buttonRect.pivot = new Vector2(0.5f, 0.5f);
+        buttonRect.anchoredPosition = anchoredPosition;
+        buttonRect.sizeDelta = new Vector2(360f, 64f);
+        buttonGO.GetComponent<Image>().color = color;
+        buttonGO.GetComponent<Button>().interactable = interactable;
+
+        var textGO = new GameObject("Text", typeof(Text));
+        textGO.transform.SetParent(buttonGO.transform, false);
+        RectTransform textRect = textGO.GetComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
+        Text text = textGO.GetComponent<Text>();
+        text.text = label;
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 28;
+        text.fontStyle = FontStyle.Bold;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = interactable ? Color.white : new Color(1f, 1f, 1f, 0.4f);
+    }
+
+    // 3D backdrop for the menu screen: moonlit ground/fog/skybox (matching the gameplay scene's
+    // ambiance), a couple of dead trees + a rock cluster for atmosphere, a warm point light for
+    // contrast against the cool moonlight (a cheap stand-in for a campfire glow, no particle
+    // system), and a static showcase character standing in view — same idea as Dead by Daylight's
+    // and Home Sweet Home's character-in-the-lobby main menus.
+    private static void BuildMenuEnvironment(Transform root)
+    {
+        RenderSettings.fog = true;
+        RenderSettings.fogMode = FogMode.Exponential;
+        RenderSettings.fogColor = new Color(0.05f, 0.06f, 0.09f);
+        RenderSettings.fogDensity = 0.03f;
+        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+        RenderSettings.ambientLight = new Color(0.12f, 0.13f, 0.17f);
+
+        Material sky = AssetDatabase.LoadAssetAtPath<Material>("Assets/Art/Environment/NightSkybox.mat");
+        if (sky != null) RenderSettings.skybox = sky;
+
+        var moonGO = new GameObject("MenuMoonlight");
+        moonGO.transform.SetParent(root, false);
+        Light moon = moonGO.AddComponent<Light>();
+        moon.type = LightType.Directional;
+        moon.color = new Color(0.6f, 0.65f, 0.85f);
+        moon.intensity = 0.5f;
+        moon.shadows = LightShadows.Soft;
+        moonGO.transform.rotation = Quaternion.Euler(35f, -120f, 0f);
+
+        var glowGO = new GameObject("MenuWarmGlow");
+        glowGO.transform.SetParent(root, false);
+        glowGO.transform.localPosition = new Vector3(0.6f, 1.3f, 2.6f);
+        Light glow = glowGO.AddComponent<Light>();
+        glow.type = LightType.Point;
+        glow.color = new Color(1f, 0.55f, 0.25f);
+        glow.intensity = 3f;
+        glow.range = 6f;
+
+        GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        ground.name = "MenuGround";
+        ground.transform.SetParent(root, false);
+        ground.transform.localScale = new Vector3(3f, 1f, 3f);
+        Material groundMat = CreateColorMaterial("MenuGroundMat", new Color(0.09f, 0.09f, 0.11f));
+        ground.GetComponent<Renderer>().sharedMaterial = groundMat;
+
+        Material rockMat = CreateColorMaterial("MenuRockMat", new Color(0.32f, 0.31f, 0.29f));
+        Material treeMat = CreateColorMaterial("MenuTreeMat", new Color(0.13f, 0.11f, 0.09f));
+        BuildDeadTree(root, treeMat, new Vector3(-3.2f, 0f, 2.2f));
+        BuildDeadTree(root, treeMat, new Vector3(3.6f, 0f, 3.4f));
+        BuildDeadTree(root, treeMat, new Vector3(-4.8f, 0f, -0.6f));
+        BuildRockCluster(root, rockMat, new Vector3(2.2f, 0f, -1.6f));
+
+        var showcaseRoot = new GameObject("MenuShowcase");
+        showcaseRoot.transform.SetParent(root, false);
+        showcaseRoot.transform.localPosition = new Vector3(1.2f, 1f, 3f);
+        showcaseRoot.transform.localRotation = Quaternion.Euler(0f, 160f, 0f);
+
+        GameObject showcaseVisual = BuildModelVisual(showcaseRoot.transform, $"{CharactersDir}/ZombieGirl.fbx", "MenuShowcase");
+        if (showcaseVisual != null)
+        {
+            showcaseVisual.transform.localScale = Vector3.one * 0.96f;
+        }
+
+        // Everything above went through CreateColorMaterial, which returns a plain in-memory
+        // Material — fine at pure runtime, but this scene gets saved to disk (SaveScene below in
+        // CreateBootScene), and a Material with no asset on disk can't be serialized into a saved
+        // scene either (same failure mode as WeaponPickup's prefab — see PersistRuntimeMaterials).
+        // The showcase character's own materials are already real remapped assets and get skipped.
+        PersistRuntimeMaterials(root.gameObject, "Assets/Art/Environment/Materials");
     }
 
     private static void ConfigureBuildScenes(string bootScenePath)

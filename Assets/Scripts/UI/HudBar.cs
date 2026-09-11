@@ -40,8 +40,9 @@ public static class HudBar
 
     // Image.Type.Filled generates its fill mesh from the assigned Sprite's rect/UV data — with
     // no Sprite (the default for a code-created Image), that geometry computation has nothing to
-    // work from and the Image renders as a full solid rectangle regardless of fillAmount.
-    private static Sprite GetSolidSprite()
+    // work from and the Image renders as a full solid rectangle regardless of fillAmount. Public
+    // so other runtime-built UI (e.g. SkillCheckController's radial gauge) can reuse it too.
+    public static Sprite GetSolidSprite()
     {
         if (solidSprite == null)
         {
