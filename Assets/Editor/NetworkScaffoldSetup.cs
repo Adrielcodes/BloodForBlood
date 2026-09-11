@@ -201,6 +201,13 @@ public static class NetworkScaffoldSetup
 
     private static void CreateOrUpdateCharacterAnimatorController()
     {
+        // Mixamo FBX imports don't enable Loop Time by default — without it, each clip plays
+        // through once and freezes on its last frame instead of cycling (very noticeable on the
+        // short Running clip, less obviously wrong but still broken on the long Idle clip).
+        SetClipLooping($"{AnimationsDir}/Idle.fbx");
+        SetClipLooping($"{AnimationsDir}/Walking.fbx");
+        SetClipLooping($"{AnimationsDir}/Running.fbx");
+
         AnimationClip idleClip = LoadNamedClip($"{AnimationsDir}/Idle.fbx");
         AnimationClip walkClip = LoadNamedClip($"{AnimationsDir}/Walking.fbx");
         AnimationClip runClip = LoadNamedClip($"{AnimationsDir}/Running.fbx");
@@ -234,6 +241,20 @@ public static class NetworkScaffoldSetup
 
         EditorUtility.SetDirty(controller);
         AssetDatabase.SaveAssets();
+    }
+
+    private static void SetClipLooping(string fbxPath)
+    {
+        var importer = (ModelImporter)AssetImporter.GetAtPath(fbxPath);
+        if (importer == null) return;
+
+        ModelImporterClipAnimation[] clips = importer.defaultClipAnimations;
+        for (int i = 0; i < clips.Length; i++)
+        {
+            clips[i].loopTime = true;
+        }
+        importer.clipAnimations = clips;
+        importer.SaveAndReimport();
     }
 
     private static AnimationClip LoadNamedClip(string fbxPath)
