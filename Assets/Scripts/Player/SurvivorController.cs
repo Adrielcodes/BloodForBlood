@@ -73,12 +73,25 @@ public class SurvivorController : NetworkedCharacterMotor
 
         if (isSprinting)
         {
-            stamina.Value = Mathf.Max(0f, stamina.Value - staminaDrainPerSecond * Time.deltaTime);
+            SetStamina(Mathf.Max(0f, stamina.Value - staminaDrainPerSecond * Time.deltaTime));
             return sprintSpeed;
         }
 
-        stamina.Value = Mathf.Min(maxStamina, stamina.Value + staminaRegenPerSecond * Time.deltaTime);
+        SetStamina(Mathf.Min(maxStamina, stamina.Value + staminaRegenPerSecond * Time.deltaTime));
         return walkSpeed;
+    }
+
+    // Skips reassigning (and therefore re-marking dirty / re-replicating) the NetworkVariable
+    // once it's already sitting at the same clamped value — e.g. sitting at 0 while continuing
+    // to sprint with no stamina, or already at max while standing still. Without this, Stamina
+    // was being written to and synced over the network every single frame indefinitely, even
+    // when nothing was actually changing.
+    private void SetStamina(float newValue)
+    {
+        if (!Mathf.Approximately(stamina.Value, newValue))
+        {
+            stamina.Value = newValue;
+        }
     }
 
     protected override void OnOwnerTick()
