@@ -5,11 +5,6 @@ using UnityEngine.InputSystem;
 [RequireComponent(typeof(CharacterController))]
 public abstract class NetworkedCharacterMotor : NetworkBehaviour
 {
-    // Movement translation uses the raw WASD world-direction directly, independent of current
-    // facing — only the visual rotation Slerps to catch up. At the old value (10) that catch-up
-    // lagged noticeably behind fast direction changes, so the model visibly swept through a wide
-    // arc trying to catch up to where it was already moving ("big turns"). Higher value keeps
-    // facing tightly locked to the actual movement direction instead.
     [SerializeField] private float rotationSpeed = 20f;
     [SerializeField] private float gravity = -9.81f;
 
@@ -17,6 +12,7 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
     private float verticalVelocity;
     private Animator animator;
     private Vector3 lastPosition;
+    private ThirdPersonCameraFollow cameraFollow;
 
     private NetworkVariable<PlayerRole> role = new NetworkVariable<PlayerRole>(
         default,
@@ -55,10 +51,10 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
             Camera cam = Camera.main;
             if (cam != null)
             {
-                ThirdPersonCameraFollow follow = cam.GetComponent<ThirdPersonCameraFollow>();
-                if (follow == null)
-                    follow = cam.gameObject.AddComponent<ThirdPersonCameraFollow>();
-                follow.SetTarget(transform);
+                cameraFollow = cam.GetComponent<ThirdPersonCameraFollow>();
+                if (cameraFollow == null)
+                    cameraFollow = cam.gameObject.AddComponent<ThirdPersonCameraFollow>();
+                cameraFollow.SetTarget(transform);
             }
         }
     }
@@ -76,7 +72,13 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
             float vertical = (kb.wKey.isPressed ? 1f : 0f) - (kb.sKey.isPressed ? 1f : 0f);
             bool sprintHeld = kb.leftShiftKey.isPressed;
 
-            Vector3 move = new Vector3(horizontal, 0f, vertical);
+            // Camera-relative, DBD-style: WASD moves relative to where the (mouse-orbited)
+            // camera is currently facing, not raw world axes — the camera's yaw is independent
+            // of the character's own facing, so diagonal input (e.g. W+D) no longer fights the
+            // camera trying to stay behind an instantly-snapping facing direction.
+            Vector3 camForward = cameraFollow != null ? cameraFollow.FlatForward : transform.forward;
+            Vector3 camRight = cameraFollow != null ? cameraFollow.FlatRight : transform.right;
+            Vector3 move = camForward * vertical + camRight * horizontal;
             bool hasMoveInput = move.sqrMagnitude > 0.001f;
             if (hasMoveInput) move.Normalize();
 
