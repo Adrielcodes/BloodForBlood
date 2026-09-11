@@ -56,6 +56,12 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
                     cameraFollow = cam.gameObject.AddComponent<ThirdPersonCameraFollow>();
                 cameraFollow.SetTarget(transform);
             }
+
+            // Lock the cursor to the center of the screen for gameplay now that we're actually
+            // controlling a character — left free before this so the Host/Client dev UI buttons
+            // are clickable. Escape (below, in Update) releases it again.
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
         }
     }
 
@@ -65,6 +71,13 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
 
         Keyboard kb = Keyboard.current;
         if (kb == null) return;
+
+        if (kb.escapeKey.wasPressedThisFrame)
+        {
+            bool isLocked = Cursor.lockState == CursorLockMode.Locked;
+            Cursor.lockState = isLocked ? CursorLockMode.None : CursorLockMode.Locked;
+            Cursor.visible = isLocked;
+        }
 
         if (CanAct)
         {
