@@ -1,0 +1,45 @@
+# Blood for Blood
+
+A 4v1 asymmetrical multiplayer horror game (Dead by Daylight-inspired): one **Killer** hunts up to 3-4 **Survivors**, who must restore Beacons while avoiding capture. Built in Unity, currently in early prototype/placeholder-art stage — the focus so far has been getting core systems (networking, roles, combat, objectives, menu flow) working end-to-end, not final visuals.
+
+## Tech stack
+
+- **Unity 6000.6.0f1 (6.6 LTS)**, Universal Render Pipeline
+- **Netcode for GameObjects (NGO) 2.13.2** — client-server multiplayer
+- **New Input System** exclusively (legacy `Input` class is disabled project-wide — using it throws)
+- **ParrelSync** for local multi-client testing without full builds
+
+## Getting started (new dev setup)
+
+1. Install **Unity Hub** and Unity **6000.6.0f1** specifically (via Hub, or add the exact version if already installed).
+2. Install **Git** and **Git LFS** (`git lfs install`) — this repo uses LFS for binary assets (models, animations). Clone normally; LFS files pull automatically.
+3. Open the project via Unity Hub, or:
+   ```
+   "C:\Program Files\Unity\Hub\Editor\6000.6.0f1\Editor\Unity.exe" -projectPath "<repo path>"
+   ```
+4. **Read `CLAUDE.md` in the repo root before touching anything.** It is the authoritative, continuously-updated architecture doc — networking model, every system's design rationale, and a long list of hard-won gotchas (things that silently break: materials that don't survive being saved into a scene, UnityEvent listeners that don't persist, ParrelSync clones silently blocking saves, etc.). Skipping it means re-discovering bugs that are already documented.
+5. To test multiplayer locally: `ParrelSync > Clones Manager` in the Editor menu creates a linked second project window. Press Play in **both** windows; one becomes Host (→ Killer), the other Client (→ Survivor).
+6. If you change anything under `Assets/Editor/NetworkScaffoldSetup.cs`'s domain (prefabs, scene objects, materials, the boot flow) or need to regenerate the project's core objects: **`Blood For Blood > Setup Network Scaffolding`** in the Editor menu. This is the single idempotent source of truth that builds/rebuilds the Survivor/Killer prefabs, NetworkManager, WeaponPickup, MatchManager, the 4 RestoreBeacons, environment dressing, and the Boot scene. Safe to re-run — only run it in the **primary** Editor window, never a ParrelSync clone (clones silently block saves; see CLAUDE.md).
+
+## What exists right now
+
+- **Roles & movement**: server-assigned Killer/Survivor roles; owner-authoritative movement, camera-relative WASD, independent mouse-look camera (locked design — see CLAUDE.md before changing).
+- **Combat**: Killer M1 downs a Survivor after 3 hits; an armed Survivor (pick up the world sword) deals smaller damage to the Killer's HP pool.
+- **Restore Beacon objective**: 4 beacons on the map; hold E through a timed interaction with skill checks to activate one (fires a beam of light into the sky on completion). Not yet wired into win/loss.
+- **Match flow**: `MatchManager` declares Killer/Survivor win based on downed-state / Killer HP, shown via an end-of-match banner.
+- **Boot flow**: `Boot.unity` (studio splash → title → menu with a 3D backdrop) is Build Settings scene 0; opening it and pressing Play (or `Setup Network Scaffolding`, which sets this as the Play-mode start scene) shows it — opening `SampleScene.unity` directly and pressing Play skips straight to gameplay for faster dev iteration.
+- **HUDs**: Survivor health/stamina, Killer health, match-end banner, interaction prompts, skill-check UI.
+
+## What's explicitly not done yet
+
+- Real 3D models/animations for anything beyond the two placeholder characters (flat-color materials throughout).
+- Beacons don't affect win/loss.
+- No lobby/matchmaking — local LAN loopback only (`127.0.0.1:7777`).
+- No settings menu (the boot menu's SETTINGS button is intentionally disabled, not broken).
+- Second weapon type, Killer's unique power — both in the GDD (`docs/GDD.md`) but unbuilt.
+
+## Where to look next
+
+- `CLAUDE.md` — the real architecture doc, keep it updated as you go.
+- `docs/GDD.md` — original design doc (note: the Stagger/Finisher combat section is stale; actual combat is the simpler hit-count system above).
+- `Assets/Editor/NetworkScaffoldSetup.cs` — everything reproducible about the project's scene/prefab state lives here.
