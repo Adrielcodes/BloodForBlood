@@ -1,3 +1,4 @@
+using System.Collections;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -62,6 +63,8 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
             // are clickable. Escape (below, in Update) releases it again.
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
+
+            CrosshairController.Create();
         }
     }
 
@@ -112,6 +115,61 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
     }
 
     protected abstract float GetCurrentMoveSpeed(bool hasMoveInput, bool sprintHeld);
+
+    // Shared by KillerController (always equipped) and SurvivorController (once armed) — parents
+    // a placeholder sword to the model's Humanoid-mapped right hand bone. Runs identically on
+    // every client (not owner-gated): everyone watching needs to see the weapon, not just the
+    // local player. Returns null if the model has no right hand (shouldn't happen for either
+    // current character model, both are Humanoid).
+    protected GameObject AttachSwordToRightHand()
+    {
+        if (animator == null) return null;
+
+        Transform hand = animator.GetBoneTransform(HumanBodyBones.RightHand);
+        if (hand == null) return null;
+
+        GameObject sword = SwordVisualBuilder.Build(hand, "EquippedSword");
+        sword.transform.localPosition = new Vector3(0.02f, 0.05f, 0f);
+        sword.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+        return sword;
+    }
+
+    private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+    private static readonly int LegacyColorId = Shader.PropertyToID("_Color");
+
+    // Hit feedback — briefly overrides every renderer under "Visual" to a flat flash color via a
+    // MaterialPropertyBlock (no per-instance material allocation, and the shared placeholder
+    // materials stay untouched for every other character using them). Called from each role's
+    // server-authoritative damage NetworkVariable's OnValueChanged, so it fires identically for
+    // every client watching, not just the owner. Sets both _BaseColor (URP/Lit, what this
+    // project's placeholder materials use) and the legacy _Color for safety.
+    protected void FlashHitColor(Color flashColor, float duration = 0.15f)
+    {
+        StartCoroutine(FlashHitColorRoutine(flashColor, duration));
+    }
+
+    private IEnumerator FlashHitColorRoutine(Color flashColor, float duration)
+    {
+        Transform visual = transform.Find("Visual");
+        if (visual == null) yield break;
+
+        Renderer[] renderers = visual.GetComponentsInChildren<Renderer>();
+        var block = new MaterialPropertyBlock();
+        block.SetColor(BaseColorId, flashColor);
+        block.SetColor(LegacyColorId, flashColor);
+
+        foreach (Renderer r in renderers)
+        {
+            r.SetPropertyBlock(block);
+        }
+
+        yield return new WaitForSeconds(duration);
+
+        foreach (Renderer r in renderers)
+        {
+            if (r != null) r.SetPropertyBlock(null);
+        }
+    }
 
     // Runs on every client (owner and observers alike), unlike Update()'s owner-gated input
     // handling — animation needs to play for everyone watching this character, not just its

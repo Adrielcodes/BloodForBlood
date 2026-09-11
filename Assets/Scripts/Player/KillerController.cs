@@ -36,6 +36,12 @@ public class KillerController : NetworkedCharacterMotor
     {
         base.OnNetworkSpawn();
 
+        AttachSwordToRightHand();
+
+        // Health only ever decreases (no heal exists yet), so any change after spawn means "just
+        // took damage" — no initial-value special-casing needed.
+        health.OnValueChanged += (previous, current) => FlashHitColor(Color.red);
+
         if (IsOwner)
         {
             KillerHudController.Create(this);

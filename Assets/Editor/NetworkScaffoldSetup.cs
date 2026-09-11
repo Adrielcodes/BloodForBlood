@@ -6,6 +6,8 @@ using UnityEditor;
 using UnityEditor.Animations;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 public static class NetworkScaffoldSetup
 {
@@ -21,6 +23,9 @@ public static class NetworkScaffoldSetup
         CreateOrUpdateCharacterAnimatorController();
 
         CreateGroundPlane();
+        CreateEnvironmentDressing();
+        SetupAmbiance();
+        SetupPostProcessing();
         GameObject survivorPrefab = CreateSurvivorPrefab();
         GameObject killerPrefab = CreateKillerPrefab();
         CreateOrUpdateNetworkManager(survivorPrefab, killerPrefab);
@@ -49,6 +54,194 @@ public static class NetworkScaffoldSetup
         ground.name = "Ground";
         ground.transform.position = Vector3.zero;
         ground.transform.localScale = new Vector3(5f, 1f, 5f);
+    }
+
+    // Ground is a 10x10-unit Plane primitive scaled (5,1,5) -> 50x50 world units centered on the
+    // origin. Player spawns run along X at z=0 (see RoleAssignmentManager.SpawnPositionFor) and
+    // WeaponPickup sits at (3,1,5) — prop placements below stay clear of both.
+    private static void CreateEnvironmentDressing()
+    {
+        if (GameObject.Find("EnvironmentDressing") != null)
+        {
+            Debug.Log("Blood For Blood: EnvironmentDressing already present in scene, skipping.");
+            return;
+        }
+
+        var root = new GameObject("EnvironmentDressing");
+
+        BuildPerimeterWalls(root.transform);
+        BuildObstacleProps(root.transform);
+    }
+
+    private static void BuildPerimeterWalls(Transform parent)
+    {
+        Material wallMat = CreateColorMaterial("PerimeterWallMat", new Color(0.14f, 0.14f, 0.16f));
+        const float half = 24f;
+        const float thickness = 1f;
+        const float height = 4f;
+
+        CreateSolidPart(PrimitiveType.Cube, parent, wallMat, "PerimeterWallNorth",
+            new Vector3(0f, height / 2f, half), new Vector3(half * 2f, height, thickness));
+        CreateSolidPart(PrimitiveType.Cube, parent, wallMat, "PerimeterWallSouth",
+            new Vector3(0f, height / 2f, -half), new Vector3(half * 2f, height, thickness));
+        CreateSolidPart(PrimitiveType.Cube, parent, wallMat, "PerimeterWallEast",
+            new Vector3(half, height / 2f, 0f), new Vector3(thickness, height, half * 2f));
+        CreateSolidPart(PrimitiveType.Cube, parent, wallMat, "PerimeterWallWest",
+            new Vector3(-half, height / 2f, 0f), new Vector3(thickness, height, half * 2f));
+    }
+
+    // Chase-friendly loop cover (DBD-style: rock clusters, dead trees, crate stacks scattered
+    // around the map edges, clear of the spawn line and the weapon pickup) rather than open ground.
+    private static void BuildObstacleProps(Transform parent)
+    {
+        Material rockMat = CreateColorMaterial("RockMat", new Color(0.35f, 0.34f, 0.32f));
+        Material treeMat = CreateColorMaterial("DeadTreeMat", new Color(0.22f, 0.18f, 0.14f));
+        Material crateMat = CreateColorMaterial("CrateMat", new Color(0.42f, 0.29f, 0.16f));
+
+        BuildRockCluster(parent, rockMat, new Vector3(0f, 0f, -10f));
+        BuildRockCluster(parent, rockMat, new Vector3(-14f, 0f, 6f));
+        BuildRockCluster(parent, rockMat, new Vector3(12f, 0f, -16f));
+
+        BuildDeadTree(parent, treeMat, new Vector3(-10f, 0f, -12f));
+        BuildDeadTree(parent, treeMat, new Vector3(16f, 0f, 8f));
+        BuildDeadTree(parent, treeMat, new Vector3(-18f, 0f, -4f));
+        BuildDeadTree(parent, treeMat, new Vector3(6f, 0f, 18f));
+        BuildDeadTree(parent, treeMat, new Vector3(-4f, 0f, 16f));
+
+        BuildCrateStack(parent, crateMat, new Vector3(11f, 0f, 4f));
+        BuildCrateStack(parent, crateMat, new Vector3(-8f, 0f, -18f));
+    }
+
+    private static void BuildRockCluster(Transform parent, Material mat, Vector3 center)
+    {
+        var cluster = new GameObject("RockCluster");
+        cluster.transform.SetParent(parent, false);
+        cluster.transform.position = center;
+
+        CreateSolidPart(PrimitiveType.Sphere, cluster.transform, mat, "Rock1", new Vector3(0f, 0.5f, 0f), new Vector3(1.6f, 1f, 1.4f));
+        CreateSolidPart(PrimitiveType.Sphere, cluster.transform, mat, "Rock2", new Vector3(1.2f, 0.35f, 0.6f), new Vector3(1f, 0.7f, 0.9f));
+        CreateSolidPart(PrimitiveType.Sphere, cluster.transform, mat, "Rock3", new Vector3(-1f, 0.3f, -0.8f), new Vector3(0.9f, 0.6f, 1f));
+    }
+
+    private static void BuildDeadTree(Transform parent, Material mat, Vector3 position)
+    {
+        var tree = new GameObject("DeadTree");
+        tree.transform.SetParent(parent, false);
+        tree.transform.position = position;
+
+        CreateSolidPart(PrimitiveType.Cylinder, tree.transform, mat, "Trunk", new Vector3(0f, 2.5f, 0f), new Vector3(0.35f, 2.5f, 0.35f));
+        CreateSolidPart(PrimitiveType.Cylinder, tree.transform, mat, "BranchA", new Vector3(0.4f, 4.3f, 0f), new Vector3(0.12f, 0.9f, 0.12f), new Vector3(0f, 0f, 55f));
+        CreateSolidPart(PrimitiveType.Cylinder, tree.transform, mat, "BranchB", new Vector3(-0.35f, 4.6f, 0.2f), new Vector3(0.1f, 0.7f, 0.1f), new Vector3(20f, 0f, -50f));
+    }
+
+    private static void BuildCrateStack(Transform parent, Material mat, Vector3 position)
+    {
+        var stack = new GameObject("CrateStack");
+        stack.transform.SetParent(parent, false);
+        stack.transform.position = position;
+
+        CreateSolidPart(PrimitiveType.Cube, stack.transform, mat, "CrateA", new Vector3(0f, 0.5f, 0f), Vector3.one);
+        CreateSolidPart(PrimitiveType.Cube, stack.transform, mat, "CrateB", new Vector3(1.1f, 0.5f, 0.3f), Vector3.one);
+        CreateSolidPart(PrimitiveType.Cube, stack.transform, mat, "CrateC", new Vector3(0.5f, 1.5f, 0.1f), Vector3.one);
+    }
+
+    // Unlike CreatePart (used for humanoid/sword visuals, where a Collider would fight the
+    // character's own CharacterController), obstacle geometry keeps its default primitive
+    // Collider so it actually blocks movement.
+    private static GameObject CreateSolidPart(
+        PrimitiveType type, Transform parent, Material material, string name,
+        Vector3 localPosition, Vector3 localScale, Vector3? localEuler = null)
+    {
+        GameObject part = GameObject.CreatePrimitive(type);
+        part.name = name;
+        part.transform.SetParent(parent, false);
+        part.transform.localPosition = localPosition;
+        part.transform.localScale = localScale;
+        part.transform.localRotation = localEuler.HasValue ? Quaternion.Euler(localEuler.Value) : Quaternion.identity;
+
+        Renderer renderer = part.GetComponent<Renderer>();
+        if (renderer != null) renderer.sharedMaterial = material;
+
+        return part;
+    }
+
+    // Dim, cool-toned lighting + distance fog for a horror mood — replaces Unity's bright default
+    // scene lighting. Idempotent by nature (just assigns values), so no "already present" guard
+    // needed like the object-creation methods above.
+    private static void SetupAmbiance()
+    {
+        RenderSettings.fog = true;
+        RenderSettings.fogMode = FogMode.Exponential;
+        RenderSettings.fogColor = new Color(0.09f, 0.1f, 0.13f);
+        RenderSettings.fogDensity = 0.008f;
+
+        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+        RenderSettings.ambientLight = new Color(0.16f, 0.17f, 0.21f);
+
+        Light[] lights = Object.FindObjectsByType<Light>(FindObjectsInactive.Exclude);
+        foreach (Light light in lights)
+        {
+            if (light.type != LightType.Directional) continue;
+
+            light.color = new Color(0.65f, 0.7f, 0.85f);
+            light.intensity = 1.1f;
+            light.shadows = LightShadows.Soft;
+            light.transform.rotation = Quaternion.Euler(25f, -130f, 0f);
+            break;
+        }
+    }
+
+    // Global URP Volume with a subtle vignette + desaturation/underexposure for horror mood.
+    // Guarded defensively (missing Camera.main, etc. just skip rather than throw) since this
+    // runs as part of the one-shot scaffold tool and shouldn't be able to abort the rest of it.
+    private static void SetupPostProcessing()
+    {
+        const string profileDir = "Assets/Art/Environment";
+        const string profilePath = profileDir + "/HorrorPostProcess.asset";
+
+        if (GameObject.Find("HorrorPostProcessVolume") == null)
+        {
+            var volumeGO = new GameObject("HorrorPostProcessVolume");
+            Volume volume = volumeGO.AddComponent<Volume>();
+            volume.isGlobal = true;
+
+            VolumeProfile profile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(profilePath);
+            if (profile == null)
+            {
+                profile = ScriptableObject.CreateInstance<VolumeProfile>();
+
+                var vignette = profile.Add<Vignette>(true);
+                vignette.intensity.overrideState = true;
+                vignette.intensity.value = 0.35f;
+                vignette.smoothness.overrideState = true;
+                vignette.smoothness.value = 0.6f;
+                vignette.color.overrideState = true;
+                vignette.color.value = Color.black;
+
+                var colorAdjustments = profile.Add<ColorAdjustments>(true);
+                colorAdjustments.saturation.overrideState = true;
+                colorAdjustments.saturation.value = -15f;
+                colorAdjustments.postExposure.overrideState = true;
+                colorAdjustments.postExposure.value = -0.15f;
+                colorAdjustments.contrast.overrideState = true;
+                colorAdjustments.contrast.value = 6f;
+
+                if (!AssetDatabase.IsValidFolder(profileDir))
+                    AssetDatabase.CreateFolder("Assets/Art", "Environment");
+
+                AssetDatabase.CreateAsset(profile, profilePath);
+            }
+
+            volume.sharedProfile = profile;
+        }
+
+        Camera mainCam = Camera.main;
+        if (mainCam == null) return;
+
+        UniversalAdditionalCameraData camData = mainCam.GetComponent<UniversalAdditionalCameraData>();
+        if (camData == null)
+            camData = mainCam.gameObject.AddComponent<UniversalAdditionalCameraData>();
+        camData.renderPostProcessing = true;
     }
 
     private const string CharactersDir = "Assets/Art/Characters";
@@ -384,21 +577,8 @@ public static class NetworkScaffoldSetup
 
     private static void BuildSwordVisual(Transform parent)
     {
-        var visual = new GameObject("Visual");
-        visual.transform.SetParent(parent, false);
-
-        Material bladeMat = CreateColorMaterial("BladeMat", new Color(0.75f, 0.76f, 0.78f));
-        Material guardMat = CreateColorMaterial("GuardMat", new Color(0.55f, 0.46f, 0.16f));
-        Material hiltMat = CreateColorMaterial("HiltMat", new Color(0.35f, 0.22f, 0.12f));
-
-        CreatePart(PrimitiveType.Cube, visual.transform, bladeMat, "Blade",
-            new Vector3(0f, 0.55f, 0f), new Vector3(0.05f, 0.7f, 0.02f));
-        CreatePart(PrimitiveType.Cube, visual.transform, guardMat, "Guard",
-            new Vector3(0f, 0.18f, 0f), new Vector3(0.24f, 0.04f, 0.04f));
-        CreatePart(PrimitiveType.Cylinder, visual.transform, hiltMat, "Handle",
-            new Vector3(0f, 0.08f, 0f), new Vector3(0.035f, 0.06f, 0.035f));
-        CreatePart(PrimitiveType.Sphere, visual.transform, guardMat, "Pommel",
-            Vector3.zero, new Vector3(0.07f, 0.07f, 0.07f));
+        GameObject visual = SwordVisualBuilder.Build(parent, "Visual");
+        visual.AddComponent<PickupVisualSpin>();
     }
 
     private static void PlaceWeaponPickupInScene(GameObject prefab)

@@ -62,10 +62,23 @@ public class SurvivorController : NetworkedCharacterMotor
         isDowned.OnValueChanged += HandleDownedChanged;
         HandleDownedChanged(false, isDowned.Value);
 
+        hasWeapon.OnValueChanged += HandleHasWeaponChanged;
+        if (hasWeapon.Value) AttachSwordToRightHand();
+
+        // Any change to HitsTaken after spawn means "just got hit" (it only ever increments, no
+        // heal/revive exists yet), so no initial-value special-casing is needed here unlike
+        // isDowned/hasWeapon above.
+        hitsTaken.OnValueChanged += (previous, current) => FlashHitColor(Color.red);
+
         if (IsOwner)
         {
             SurvivorHudController.Create(this);
         }
+    }
+
+    private void HandleHasWeaponChanged(bool previous, bool current)
+    {
+        if (current) AttachSwordToRightHand();
     }
 
     private void HandleDownedChanged(bool previous, bool current)
