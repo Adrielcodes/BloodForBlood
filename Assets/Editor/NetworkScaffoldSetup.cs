@@ -3,6 +3,7 @@ using System.IO;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
@@ -10,11 +11,14 @@ public static class NetworkScaffoldSetup
 {
     private const string PrefabDir = "Assets/Prefabs";
     private const string CharacterMaterialsDir = "Assets/Art/Characters/Materials";
+    private const string AnimationsDir = "Assets/Art/Animations";
+    private const string AnimatorControllerPath = AnimationsDir + "/CharacterAnimator.controller";
 
     [MenuItem("Blood For Blood/Setup Network Scaffolding")]
     public static void Setup()
     {
         AssignCharacterPlaceholderMaterials();
+        CreateOrUpdateCharacterAnimatorController();
 
         CreateGroundPlane();
         GameObject survivorPrefab = CreateSurvivorPrefab();
@@ -184,10 +188,62 @@ public static class NetworkScaffoldSetup
         // collision capsule bottom sits at local y = -1 (default height 2, center 0), so align to that.
         visual.transform.localPosition = new Vector3(0f, -1f, 0f);
 
-        if (visual.GetComponent<Animator>() == null)
-            visual.AddComponent<Animator>();
+        Animator animator = visual.GetComponent<Animator>();
+        if (animator == null)
+            animator = visual.AddComponent<Animator>();
+
+        var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(AnimatorControllerPath);
+        if (controller != null)
+            animator.runtimeAnimatorController = controller;
 
         return visual;
+    }
+
+    private static void CreateOrUpdateCharacterAnimatorController()
+    {
+        AnimationClip idleClip = LoadNamedClip($"{AnimationsDir}/Idle.fbx");
+        AnimationClip walkClip = LoadNamedClip($"{AnimationsDir}/Walking.fbx");
+        AnimationClip runClip = LoadNamedClip($"{AnimationsDir}/Running.fbx");
+        if (idleClip == null || walkClip == null || runClip == null)
+        {
+            Debug.LogWarning("Blood For Blood: Idle/Walking/Running animation clips not found under " +
+                $"{AnimationsDir} — skipping Animator Controller setup.");
+            return;
+        }
+
+        AnimatorController controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(AnimatorControllerPath);
+        if (controller == null)
+            controller = AnimatorController.CreateAnimatorControllerAtPath(AnimatorControllerPath);
+
+        if (System.Array.FindIndex(controller.parameters, p => p.name == "Speed") < 0)
+            controller.AddParameter("Speed", AnimatorControllerParameterType.Float);
+
+        AnimatorStateMachine stateMachine = controller.layers[0].stateMachine;
+        foreach (ChildAnimatorState existing in stateMachine.states)
+            stateMachine.RemoveState(existing.state);
+
+        var blendTree = new BlendTree { name = "Locomotion", blendType = BlendTreeType.Simple1D, blendParameter = "Speed" };
+        AssetDatabase.AddObjectToAsset(blendTree, controller);
+        blendTree.AddChild(idleClip, 0f);
+        blendTree.AddChild(walkClip, 5f);
+        blendTree.AddChild(runClip, 9f);
+
+        AnimatorState locomotionState = stateMachine.AddState("Locomotion");
+        locomotionState.motion = blendTree;
+        stateMachine.defaultState = locomotionState;
+
+        EditorUtility.SetDirty(controller);
+        AssetDatabase.SaveAssets();
+    }
+
+    private static AnimationClip LoadNamedClip(string fbxPath)
+    {
+        foreach (Object asset in AssetDatabase.LoadAllAssetsAtPath(fbxPath))
+        {
+            if (asset is AnimationClip clip && !clip.name.StartsWith("__preview__"))
+                return clip;
+        }
+        return null;
     }
 
     private static GameObject BuildHumanoidVisual(Transform parent, Color skinColor, Color outfitColor, Color hairColor, bool isKiller)

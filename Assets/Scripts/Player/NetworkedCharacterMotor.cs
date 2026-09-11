@@ -10,6 +10,8 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
 
     private CharacterController controller;
     private float verticalVelocity;
+    private Animator animator;
+    private Vector3 lastPosition;
 
     private NetworkVariable<PlayerRole> role = new NetworkVariable<PlayerRole>(
         default,
@@ -29,6 +31,8 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
     protected virtual void Awake()
     {
         controller = GetComponent<CharacterController>();
+        animator = GetComponentInChildren<Animator>();
+        lastPosition = transform.position;
     }
 
     public override void OnNetworkSpawn()
@@ -73,4 +77,19 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
     }
 
     protected abstract float GetCurrentMoveSpeed(bool hasMoveInput, bool sprintHeld);
+
+    // Runs on every client (owner and observers alike), unlike Update()'s owner-gated input
+    // handling — animation needs to play for everyone watching this character, not just its
+    // owner. Deriving speed from the already-replicated transform.position (via
+    // OwnerNetworkTransform) avoids needing a separate NetworkVariable just for animation.
+    private void LateUpdate()
+    {
+        if (animator == null) return;
+
+        Vector3 delta = transform.position - lastPosition;
+        delta.y = 0f;
+        float speed = Time.deltaTime > 0f ? delta.magnitude / Time.deltaTime : 0f;
+        animator.SetFloat("Speed", speed);
+        lastPosition = transform.position;
+    }
 }
