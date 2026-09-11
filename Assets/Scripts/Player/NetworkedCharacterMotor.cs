@@ -110,7 +110,12 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
             OnOwnerTick();
         }
 
-        verticalVelocity = controller.isGrounded ? -0.5f : verticalVelocity + gravity * Time.deltaTime;
+        // -0.5f used to be enough to keep controller.isGrounded true while standing still, but it
+        // was actually borderline: on a perfectly flat plane the CharacterController's own ground
+        // check can drop out for a single frame, which flips this back into the gravity-accumulate
+        // branch and produces a barely-visible vertical bob every frame — reported as "character
+        // flickers" / "slightly above the ground". A firmer downward bias keeps contact stable.
+        verticalVelocity = controller.isGrounded ? -2f : verticalVelocity + gravity * Time.deltaTime;
         controller.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
     }
 

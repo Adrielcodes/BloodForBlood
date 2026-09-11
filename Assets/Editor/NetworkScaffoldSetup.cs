@@ -8,6 +8,8 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 public static class NetworkScaffoldSetup
 {
@@ -39,7 +41,9 @@ public static class NetworkScaffoldSetup
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
 
-        Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Survivor/Killer prefabs + WeaponPickup + MatchManager).");
+        CreateBootScene();
+
+        Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Survivor/Killer prefabs + WeaponPickup + MatchManager + Boot scene).");
     }
 
     private static void CreateGroundPlane()
@@ -178,17 +182,50 @@ public static class NetworkScaffoldSetup
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
         RenderSettings.ambientLight = new Color(0.16f, 0.17f, 0.21f);
 
+        // Moonlight, not sunlight — low intensity, pale cool tint.
         Light[] lights = Object.FindObjectsByType<Light>(FindObjectsInactive.Exclude);
         foreach (Light light in lights)
         {
             if (light.type != LightType.Directional) continue;
 
             light.color = new Color(0.65f, 0.7f, 0.85f);
-            light.intensity = 1.1f;
+            light.intensity = 0.45f;
             light.shadows = LightShadows.Soft;
             light.transform.rotation = Quaternion.Euler(25f, -130f, 0f);
             break;
         }
+
+        SetupNightSkybox();
+    }
+
+    // Dark procedural skybox (low exposure, near-black ground/sky tint, tiny sun disc) instead of
+    // Unity's bright default daytime skybox. Must be a real persisted .mat asset before assigning
+    // to RenderSettings.skybox — same reasoning as PersistRuntimeMaterials below: a Material that
+    // was never saved to disk can't survive being referenced from serialized scene/asset data.
+    private static void SetupNightSkybox()
+    {
+        const string path = "Assets/Art/Environment/NightSkybox.mat";
+
+        Material sky = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (sky == null)
+        {
+            Shader skyShader = Shader.Find("Skybox/Procedural");
+            if (skyShader == null) return;
+
+            sky = new Material(skyShader) { name = "NightSkybox" };
+            sky.SetFloat("_SunSize", 0.01f);
+            sky.SetColor("_SkyTint", new Color(0.04f, 0.05f, 0.09f));
+            sky.SetColor("_GroundColor", new Color(0.02f, 0.02f, 0.03f));
+            sky.SetFloat("_Exposure", 0.35f);
+            sky.SetFloat("_AtmosphereThickness", 0.7f);
+
+            if (!AssetDatabase.IsValidFolder("Assets/Art/Environment"))
+                AssetDatabase.CreateFolder("Assets/Art", "Environment");
+
+            AssetDatabase.CreateAsset(sky, path);
+        }
+
+        RenderSettings.skybox = sky;
     }
 
     // Global URP Volume with a subtle vignette + desaturation/underexposure for horror mood.
@@ -579,6 +616,40 @@ public static class NetworkScaffoldSetup
     {
         GameObject visual = SwordVisualBuilder.Build(parent, "Visual");
         visual.AddComponent<PickupVisualSpin>();
+        PersistRuntimeMaterials(visual);
+    }
+
+    // SwordVisualBuilder normally creates cheap in-memory Materials (new Material(shader)), which
+    // is fine when it's called at runtime (NetworkedCharacterMotor.AttachSwordToRightHand) — the
+    // object and its materials just live for as long as the GameObject does. But WeaponPickup.prefab
+    // is a real saved asset: PrefabUtility.SaveAsPrefabAsset can't persist a reference to a Material
+    // that was never itself saved to disk, so the reference silently comes back null after the
+    // save — which Unity renders as its default magenta "missing material" fallback. Swap each
+    // renderer's material for a real persisted .mat asset (reused by name across re-runs) before
+    // the prefab gets saved.
+    private static void PersistRuntimeMaterials(GameObject root)
+    {
+        const string materialsDir = "Assets/Art/Weapons/Materials";
+        if (!AssetDatabase.IsValidFolder("Assets/Art/Weapons"))
+            AssetDatabase.CreateFolder("Assets/Art", "Weapons");
+        if (!AssetDatabase.IsValidFolder(materialsDir))
+            AssetDatabase.CreateFolder("Assets/Art/Weapons", "Materials");
+
+        foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
+        {
+            Material runtimeMat = renderer.sharedMaterial;
+            if (runtimeMat == null) continue;
+
+            string assetPath = $"{materialsDir}/{runtimeMat.name}.mat";
+            Material persisted = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+            if (persisted == null)
+            {
+                persisted = new Material(runtimeMat);
+                AssetDatabase.CreateAsset(persisted, assetPath);
+            }
+
+            renderer.sharedMaterial = persisted;
+        }
     }
 
     private static void PlaceWeaponPickupInScene(GameObject prefab)
@@ -622,6 +693,161 @@ public static class NetworkScaffoldSetup
         }
 
         PrefabUtility.InstantiatePrefab(prefab);
+    }
+
+    // Boot/loading flow: Assets/Scenes/Boot.unity becomes Build Settings scene 0 (SampleScene
+    // becomes scene 1) and shows Agape Forge -> "Blood For Blood" -> a menu with a Play button
+    // that loads SampleScene. Built additively alongside whatever scene is currently open (rather
+    // than via EditorSceneManager.NewScene(..., Single), which would replace it) so this never
+    // disrupts an in-progress editing session on SampleScene — the additive scene is closed again
+    // once saved, leaving the editor's open scenes exactly as they were before this ran.
+    private static void CreateBootScene()
+    {
+        const string bootScenePath = "Assets/Scenes/Boot.unity";
+
+        if (File.Exists(bootScenePath))
+        {
+            Debug.Log("Blood For Blood: Boot scene already present, skipping creation.");
+            ConfigureBuildScenes(bootScenePath);
+            return;
+        }
+
+        Scene originalActiveScene = EditorSceneManager.GetActiveScene();
+
+        Scene bootScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+        EditorSceneManager.SetActiveScene(bootScene);
+
+        var canvasGO = new GameObject("BootCanvas");
+        Canvas canvas = canvasGO.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        CanvasScaler scaler = canvasGO.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        canvasGO.AddComponent<GraphicRaycaster>();
+
+        var background = new GameObject("Background", typeof(Image));
+        background.transform.SetParent(canvasGO.transform, false);
+        RectTransform bgRect = background.GetComponent<RectTransform>();
+        bgRect.anchorMin = Vector2.zero;
+        bgRect.anchorMax = Vector2.one;
+        bgRect.offsetMin = Vector2.zero;
+        bgRect.offsetMax = Vector2.zero;
+        background.GetComponent<Image>().color = Color.black;
+
+        GameObject studioScreen = BuildTextScreen(canvasGO.transform, "StudioScreen", "AGAPE FORGE", 64, Color.white);
+        GameObject titleScreen = BuildTextScreen(canvasGO.transform, "TitleScreen", "BLOOD FOR BLOOD", 96, new Color(0.8f, 0.1f, 0.1f));
+        GameObject menuScreen = BuildMenuScreen(canvasGO.transform);
+
+        var controllerGO = new GameObject("BootSequenceController");
+        BootSequenceController controller = controllerGO.AddComponent<BootSequenceController>();
+        controller.Configure(studioScreen, titleScreen, menuScreen);
+
+        Button playButton = menuScreen.GetComponentInChildren<Button>(true);
+        playButton.onClick.AddListener(controller.OnPlayPressed);
+
+        if (!Directory.Exists("Assets/Scenes"))
+            Directory.CreateDirectory("Assets/Scenes");
+
+        EditorSceneManager.SaveScene(bootScene, bootScenePath);
+
+        EditorSceneManager.SetActiveScene(originalActiveScene);
+        EditorSceneManager.CloseScene(bootScene, true);
+
+        ConfigureBuildScenes(bootScenePath);
+    }
+
+    private static GameObject BuildTextScreen(Transform parent, string name, string message, int fontSize, Color color)
+    {
+        var screen = new GameObject(name);
+        screen.transform.SetParent(parent, false);
+        RectTransform screenRect = screen.AddComponent<RectTransform>();
+        screenRect.anchorMin = Vector2.zero;
+        screenRect.anchorMax = Vector2.one;
+        screenRect.offsetMin = Vector2.zero;
+        screenRect.offsetMax = Vector2.zero;
+
+        var textGO = new GameObject("Text", typeof(Text));
+        textGO.transform.SetParent(screen.transform, false);
+        RectTransform textRect = textGO.GetComponent<RectTransform>();
+        textRect.anchorMin = new Vector2(0.5f, 0.5f);
+        textRect.anchorMax = new Vector2(0.5f, 0.5f);
+        textRect.pivot = new Vector2(0.5f, 0.5f);
+        textRect.sizeDelta = new Vector2(1700f, 300f);
+
+        Text text = textGO.GetComponent<Text>();
+        text.text = message;
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = fontSize;
+        text.fontStyle = FontStyle.Bold;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = color;
+
+        screen.SetActive(false);
+        return screen;
+    }
+
+    private static GameObject BuildMenuScreen(Transform parent)
+    {
+        var screen = new GameObject("MenuScreen");
+        screen.transform.SetParent(parent, false);
+        RectTransform screenRect = screen.AddComponent<RectTransform>();
+        screenRect.anchorMin = Vector2.zero;
+        screenRect.anchorMax = Vector2.one;
+        screenRect.offsetMin = Vector2.zero;
+        screenRect.offsetMax = Vector2.zero;
+
+        var titleGO = new GameObject("Title", typeof(Text));
+        titleGO.transform.SetParent(screen.transform, false);
+        RectTransform titleRect = titleGO.GetComponent<RectTransform>();
+        titleRect.anchorMin = new Vector2(0.5f, 0.68f);
+        titleRect.anchorMax = new Vector2(0.5f, 0.68f);
+        titleRect.pivot = new Vector2(0.5f, 0.5f);
+        titleRect.sizeDelta = new Vector2(1500f, 200f);
+        Text title = titleGO.GetComponent<Text>();
+        title.text = "BLOOD FOR BLOOD";
+        title.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        title.fontSize = 60;
+        title.fontStyle = FontStyle.Bold;
+        title.alignment = TextAnchor.MiddleCenter;
+        title.color = new Color(0.8f, 0.1f, 0.1f);
+
+        var buttonGO = new GameObject("PlayButton", typeof(Image), typeof(Button));
+        buttonGO.transform.SetParent(screen.transform, false);
+        RectTransform buttonRect = buttonGO.GetComponent<RectTransform>();
+        buttonRect.anchorMin = new Vector2(0.5f, 0.4f);
+        buttonRect.anchorMax = new Vector2(0.5f, 0.4f);
+        buttonRect.pivot = new Vector2(0.5f, 0.5f);
+        buttonRect.sizeDelta = new Vector2(320f, 84f);
+        buttonGO.GetComponent<Image>().color = new Color(0.5f, 0.1f, 0.1f);
+
+        var buttonTextGO = new GameObject("Text", typeof(Text));
+        buttonTextGO.transform.SetParent(buttonGO.transform, false);
+        RectTransform buttonTextRect = buttonTextGO.GetComponent<RectTransform>();
+        buttonTextRect.anchorMin = Vector2.zero;
+        buttonTextRect.anchorMax = Vector2.one;
+        buttonTextRect.offsetMin = Vector2.zero;
+        buttonTextRect.offsetMax = Vector2.zero;
+        Text buttonText = buttonTextGO.GetComponent<Text>();
+        buttonText.text = "PLAY";
+        buttonText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        buttonText.fontSize = 36;
+        buttonText.fontStyle = FontStyle.Bold;
+        buttonText.alignment = TextAnchor.MiddleCenter;
+        buttonText.color = Color.white;
+
+        screen.SetActive(false);
+        return screen;
+    }
+
+    private static void ConfigureBuildScenes(string bootScenePath)
+    {
+        const string gameplayScenePath = "Assets/Scenes/SampleScene.unity";
+
+        EditorBuildSettings.scenes = new[]
+        {
+            new EditorBuildSettingsScene(bootScenePath, true),
+            new EditorBuildSettingsScene(gameplayScenePath, true)
+        };
     }
 
     private static void CreateOrUpdateNetworkManager(GameObject survivorPrefab, GameObject killerPrefab)
