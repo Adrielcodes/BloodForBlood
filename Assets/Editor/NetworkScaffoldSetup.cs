@@ -192,6 +192,13 @@ public static class NetworkScaffoldSetup
         if (animator == null)
             animator = visual.AddComponent<Animator>();
 
+        // The Mixamo Walking/Running clips carry root motion (the hip bone's own forward
+        // translation). With Apply Root Motion on (Animator's default), that fights
+        // CharacterController.Move() in NetworkedCharacterMotor — both drive the transform at
+        // once, causing erratic jumps. Movement must come from CharacterController alone; the
+        // Animator should only ever pose bones, never move the root.
+        animator.applyRootMotion = false;
+
         var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(AnimatorControllerPath);
         if (controller != null)
             animator.runtimeAnimatorController = controller;
