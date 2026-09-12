@@ -26,9 +26,74 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
 
     protected abstract PlayerRole RoleValue { get; }
 
-    protected virtual bool CanAct => true;
+    // Subclasses combine with their own state (downed, stunned, hidden) via `base.CanAct && ...`.
+    protected virtual bool CanAct => !isActionLocked;
 
     protected virtual void OnOwnerTick() { }
+
+    // Vaulting is an owner-local action (no RPC): the owner just moves itself across the obstacle
+    // and OwnerNetworkTransform replicates it like any other movement. The Killer vaults slower,
+    // same idea as DBD — that gap is what makes a window a real chase tool for a Survivor.
+    protected virtual float VaultDuration => 0.65f;
+
+    private bool isActionLocked;
+
+    public bool IsActionLocked => isActionLocked;
+
+    // For interactables (VaultableObstacle, HidingLocker, SlamDoor) that need to know whether the
+    // local character is currently free to act, without each of them re-deriving downed/stunned/
+    // hidden/vaulting state.
+    public bool CanCurrentlyAct => CanAct;
+
+    protected CharacterController Controller => controller;
+
+    // Moves this (owned) character to `target` over VaultDuration with input locked. Called by
+    // VaultableObstacle for the local owner only.
+    public void BeginVault(Vector3 target)
+    {
+        if (!IsOwner || isActionLocked) return;
+        StartCoroutine(VaultRoutine(target));
+    }
+
+    private IEnumerator VaultRoutine(Vector3 target)
+    {
+        isActionLocked = true;
+        Vector3 start = transform.position;
+        Vector3 flat = target - start;
+        flat.y = 0f;
+        if (flat.sqrMagnitude > 0.001f)
+            transform.rotation = Quaternion.LookRotation(flat);
+
+        // CharacterController.Move would fight the obstacle's own collider mid-vault, so drive the
+        // transform directly and re-enable the controller once we're on the far side.
+        controller.enabled = false;
+        float t = 0f;
+        float duration = VaultDuration;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float p = Mathf.Clamp01(t / duration);
+            Vector3 pos = Vector3.Lerp(start, target, p);
+            pos.y += Mathf.Sin(p * Mathf.PI) * 0.6f;
+            transform.position = pos;
+            yield return null;
+        }
+        transform.position = target;
+        controller.enabled = true;
+        verticalVelocity = 0f;
+        isActionLocked = false;
+    }
+
+    // Owner-side teleport (e.g. entering/leaving a locker) — the server can't move an
+    // owner-authoritative transform directly, so it replicates an anchor and the owner applies it.
+    public void OwnerTeleport(Vector3 position)
+    {
+        if (!IsOwner) return;
+        controller.enabled = false;
+        transform.position = position;
+        controller.enabled = true;
+        verticalVelocity = 0f;
+    }
 
     // Camera framing hooks — shared close/shoulder-height default for both roles (see
     // KillerController's original tuning notes for why lookHeight is small: it's an offset above
@@ -125,6 +190,7 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
         // check can drop out for a single frame, which flips this back into the gravity-accumulate
         // branch and produces a barely-visible vertical bob every frame — reported as "character
         // flickers" / "slightly above the ground". A firmer downward bias keeps contact stable.
+        if (!controller.enabled) return;
         verticalVelocity = controller.isGrounded ? -2f : verticalVelocity + gravity * Time.deltaTime;
         controller.Move(new Vector3(0f, verticalVelocity, 0f) * Time.deltaTime);
     }

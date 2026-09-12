@@ -27,7 +27,7 @@ public static class NetworkScaffoldSetup
         CreateOrUpdateCharacterAnimatorController();
 
         CreateGroundPlane();
-        CreateEnvironmentDressing();
+        HospitalMapBuilder.Build();
         SetupAmbiance();
         SetupPostProcessing();
         GameObject survivorPrefab = CreateSurvivorPrefab();
@@ -35,13 +35,13 @@ public static class NetworkScaffoldSetup
         CreateOrUpdateNetworkManager(survivorPrefab, killerPrefab);
 
         GameObject weaponPickupPrefab = CreateWeaponPickupPrefab();
-        PlaceWeaponPickupInScene(weaponPickupPrefab);
-
         GameObject matchManagerPrefab = CreateMatchManagerPrefab();
         PlaceMatchManagerInScene(matchManagerPrefab);
-
         GameObject restoreBeaconPrefab = CreateRestoreBeaconPrefab();
-        PlaceRestoreBeaconsInScene(restoreBeaconPrefab);
+
+        // Beacon/pickup candidate spawn points live in the map builder (8 + 6; MatchManager keeps
+        // 4 + 3 per match).
+        HospitalMapBuilder.PlaceObjectives(restoreBeaconPrefab, weaponPickupPrefab);
 
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
@@ -81,67 +81,6 @@ public static class NetworkScaffoldSetup
         ground.transform.localScale = new Vector3(5f, 1f, 5f);
     }
 
-    // Ground is a 10x10-unit Plane primitive scaled (5,1,5) -> 50x50 world units centered on the
-    // origin. Player spawns run along X at z=0 (see RoleAssignmentManager.SpawnPositionFor) and
-    // WeaponPickup sits at (3,1,5) — prop placements below stay clear of both.
-    private static void CreateEnvironmentDressing()
-    {
-        if (GameObject.Find("EnvironmentDressing") != null)
-        {
-            Debug.Log("Blood For Blood: EnvironmentDressing already present in scene, skipping.");
-            return;
-        }
-
-        var root = new GameObject("EnvironmentDressing");
-
-        BuildPerimeterWalls(root.transform);
-        BuildObstacleProps(root.transform);
-
-        // Same trap as WeaponPickup's sword and the menu backdrop: CreateSolidPart/CreateColorMaterial
-        // return plain in-memory Materials, which can't be serialized into the saved scene — without
-        // this, the walls/props would render magenta ("missing material") after a reload.
-        PersistRuntimeMaterials(root);
-    }
-
-    private static void BuildPerimeterWalls(Transform parent)
-    {
-        Material wallMat = CreateColorMaterial("PerimeterWallMat", new Color(0.14f, 0.14f, 0.16f));
-        const float half = 24f;
-        const float thickness = 1f;
-        const float height = 4f;
-
-        CreateSolidPart(PrimitiveType.Cube, parent, wallMat, "PerimeterWallNorth",
-            new Vector3(0f, height / 2f, half), new Vector3(half * 2f, height, thickness));
-        CreateSolidPart(PrimitiveType.Cube, parent, wallMat, "PerimeterWallSouth",
-            new Vector3(0f, height / 2f, -half), new Vector3(half * 2f, height, thickness));
-        CreateSolidPart(PrimitiveType.Cube, parent, wallMat, "PerimeterWallEast",
-            new Vector3(half, height / 2f, 0f), new Vector3(thickness, height, half * 2f));
-        CreateSolidPart(PrimitiveType.Cube, parent, wallMat, "PerimeterWallWest",
-            new Vector3(-half, height / 2f, 0f), new Vector3(thickness, height, half * 2f));
-    }
-
-    // Chase-friendly loop cover (DBD-style: rock clusters, dead trees, crate stacks scattered
-    // around the map edges, clear of the spawn line and the weapon pickup) rather than open ground.
-    private static void BuildObstacleProps(Transform parent)
-    {
-        Material rockMat = CreateColorMaterial("RockMat", new Color(0.35f, 0.34f, 0.32f));
-        Material treeMat = CreateColorMaterial("DeadTreeMat", new Color(0.22f, 0.18f, 0.14f));
-        Material crateMat = CreateColorMaterial("CrateMat", new Color(0.42f, 0.29f, 0.16f));
-
-        BuildRockCluster(parent, rockMat, new Vector3(0f, 0f, -10f));
-        BuildRockCluster(parent, rockMat, new Vector3(-14f, 0f, 6f));
-        BuildRockCluster(parent, rockMat, new Vector3(12f, 0f, -16f));
-
-        BuildDeadTree(parent, treeMat, new Vector3(-10f, 0f, -12f));
-        BuildDeadTree(parent, treeMat, new Vector3(16f, 0f, 8f));
-        BuildDeadTree(parent, treeMat, new Vector3(-18f, 0f, -4f));
-        BuildDeadTree(parent, treeMat, new Vector3(6f, 0f, 18f));
-        BuildDeadTree(parent, treeMat, new Vector3(-4f, 0f, 16f));
-
-        BuildCrateStack(parent, crateMat, new Vector3(11f, 0f, 4f));
-        BuildCrateStack(parent, crateMat, new Vector3(-8f, 0f, -18f));
-    }
-
     private static void BuildRockCluster(Transform parent, Material mat, Vector3 center)
     {
         var cluster = new GameObject("RockCluster");
@@ -164,21 +103,10 @@ public static class NetworkScaffoldSetup
         CreateSolidPart(PrimitiveType.Cylinder, tree.transform, mat, "BranchB", new Vector3(-0.35f, 4.6f, 0.2f), new Vector3(0.1f, 0.7f, 0.1f), new Vector3(20f, 0f, -50f));
     }
 
-    private static void BuildCrateStack(Transform parent, Material mat, Vector3 position)
-    {
-        var stack = new GameObject("CrateStack");
-        stack.transform.SetParent(parent, false);
-        stack.transform.position = position;
-
-        CreateSolidPart(PrimitiveType.Cube, stack.transform, mat, "CrateA", new Vector3(0f, 0.5f, 0f), Vector3.one);
-        CreateSolidPart(PrimitiveType.Cube, stack.transform, mat, "CrateB", new Vector3(1.1f, 0.5f, 0.3f), Vector3.one);
-        CreateSolidPart(PrimitiveType.Cube, stack.transform, mat, "CrateC", new Vector3(0.5f, 1.5f, 0.1f), Vector3.one);
-    }
-
     // Unlike CreatePart (used for humanoid/sword visuals, where a Collider would fight the
     // character's own CharacterController), obstacle geometry keeps its default primitive
     // Collider so it actually blocks movement.
-    private static GameObject CreateSolidPart(
+    internal static GameObject CreateSolidPart(
         PrimitiveType type, Transform parent, Material material, string name,
         Vector3 localPosition, Vector3 localScale, Vector3? localEuler = null)
     {
@@ -600,7 +528,7 @@ public static class NetworkScaffoldSetup
         return part;
     }
 
-    private static Material CreateColorMaterial(string name, Color color)
+    internal static Material CreateColorMaterial(string name, Color color)
     {
         Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
         var mat = new Material(shader) { name = name, color = color };
@@ -653,7 +581,7 @@ public static class NetworkScaffoldSetup
     // save — which Unity renders as its default magenta "missing material" fallback. Swap each
     // renderer's material for a real persisted .mat asset (reused by name across re-runs) before
     // the prefab gets saved.
-    private static void PersistRuntimeMaterials(GameObject root, string materialsDir = "Assets/Art/Weapons/Materials")
+    internal static void PersistRuntimeMaterials(GameObject root, string materialsDir = "Assets/Art/Weapons/Materials")
     {
         if (!AssetDatabase.IsValidFolder(materialsDir))
         {
@@ -683,18 +611,6 @@ public static class NetworkScaffoldSetup
 
             renderer.sharedMaterial = persisted;
         }
-    }
-
-    private static void PlaceWeaponPickupInScene(GameObject prefab)
-    {
-        if (GameObject.Find("WeaponPickup") != null)
-        {
-            Debug.Log("Blood For Blood: WeaponPickup already present in scene, skipping placement.");
-            return;
-        }
-
-        GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
-        instance.transform.position = new Vector3(3f, 1f, 5f);
     }
 
     // The Restore Beacon objective: 4 in-scene NetworkObjects (same in-scene-placed pattern as
@@ -740,28 +656,6 @@ public static class NetworkScaffoldSetup
         CreateSolidPart(PrimitiveType.Sphere, parent, bowlMat, "Bowl", new Vector3(0f, 2f, 0f), new Vector3(0.6f, 0.35f, 0.6f));
     }
 
-    private static void PlaceRestoreBeaconsInScene(GameObject prefab)
-    {
-        if (GameObject.Find("RestoreBeacon") != null)
-        {
-            Debug.Log("Blood For Blood: RestoreBeacons already present in scene, skipping placement.");
-            return;
-        }
-
-        Vector3[] positions =
-        {
-            new Vector3(18f, 1f, 18f),
-            new Vector3(-18f, 1f, 18f),
-            new Vector3(18f, 1f, -18f),
-            new Vector3(-18f, 1f, -18f),
-        };
-
-        foreach (Vector3 position in positions)
-        {
-            GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
-            instance.transform.position = position;
-        }
-    }
 
     // Second in-scene-placed NetworkObject (after WeaponPickup) — pure logic, no collider/visual
     // needed. See MatchManager.cs for why it must live in the scene rather than spawn dynamically:

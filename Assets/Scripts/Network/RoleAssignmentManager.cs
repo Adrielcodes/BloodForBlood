@@ -59,8 +59,19 @@ public class RoleAssignmentManager : MonoBehaviour
         }
     }
 
+    // Hospital map (see Assets/Editor/HospitalMapBuilder.cs): the Killer starts in the morgue at
+    // the north end, Survivors in the south lobby — index 0 is always the Killer (first approved
+    // connection, see ApprovalCheck). Duplicated here rather than referenced because the builder
+    // is editor-only code.
+    private static readonly Vector3 KillerSpawn = new Vector3(0f, 1f, 22f);
+    private static readonly Vector3[] SurvivorSpawns =
+    {
+        new Vector3(-4.5f, 1f, -24f), new Vector3(-1.5f, 1f, -24f), new Vector3(1.5f, 1f, -24f), new Vector3(4.5f, 1f, -24f),
+    };
+
     private Vector3 SpawnPositionFor(int index)
     {
-        return new Vector3(index * 3f, 1f, 0f);
+        if (index == 0) return KillerSpawn;
+        return SurvivorSpawns[(index - 1) % SurvivorSpawns.Length];
     }
 }

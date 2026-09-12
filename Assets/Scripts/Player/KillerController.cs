@@ -16,12 +16,35 @@ public class KillerController : NetworkedCharacterMotor
     [SerializeField] private float attackCooldown = 1f;
 
     private NetworkVariable<int> health;
+    private readonly NetworkVariable<bool> isStunned = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private float lastAttackServerTime = float.NegativeInfinity;
 
     public NetworkVariable<int> Health => health;
+    public NetworkVariable<bool> IsStunned => isStunned;
     public int MaxHealth => maxHealth;
 
     protected override PlayerRole RoleValue => PlayerRole.Killer;
+
+    protected override bool CanAct => base.CanAct && !isStunned.Value;
+
+    // Killer vaults noticeably slower than a Survivor (0.65s) — the gap is what makes windows a
+    // real chase tool, same as DBD.
+    protected override float VaultDuration => 1.1f;
+
+    // Door slammed in the Killer's face (SlamDoor) — brief input lockout, white flash for feedback.
+    public void ServerApplyStun(float seconds)
+    {
+        if (!IsServer || isStunned.Value) return;
+        isStunned.Value = true;
+        StartCoroutine(ClearStunAfter(seconds));
+    }
+
+    private System.Collections.IEnumerator ClearStunAfter(float seconds)
+    {
+        yield return new WaitForSeconds(seconds);
+        isStunned.Value = false;
+    }
 
     protected override void Awake()
     {
@@ -41,6 +64,7 @@ public class KillerController : NetworkedCharacterMotor
         // Health only ever decreases (no heal exists yet), so any change after spawn means "just
         // took damage" — no initial-value special-casing needed.
         health.OnValueChanged += (previous, current) => FlashHitColor(Color.red);
+        isStunned.OnValueChanged += (previous, current) => { if (current) FlashHitColor(Color.white, 0.4f); };
 
         if (IsOwner)
         {

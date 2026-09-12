@@ -30,6 +30,12 @@ public class SurvivorController : NetworkedCharacterMotor
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     private readonly NetworkVariable<bool> hasWeapon = new NetworkVariable<bool>(
         false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    // Declared BEFORE isHidden on purpose: NGO delivers same-tick NetworkVariable deltas in field
+    // declaration order, so the anchor position always lands before the flag that consumes it.
+    private readonly NetworkVariable<Vector3> hiddenAnchor = new NetworkVariable<Vector3>(
+        Vector3.zero, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    private readonly NetworkVariable<bool> isHidden = new NetworkVariable<bool>(
+        false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     private Transform visualTransform;
     private float lastWeaponAttackServerTime = float.NegativeInfinity;
@@ -39,12 +45,31 @@ public class SurvivorController : NetworkedCharacterMotor
     public NetworkVariable<int> HitsTaken => hitsTaken;
     public NetworkVariable<bool> IsDowned => isDowned;
     public NetworkVariable<bool> HasWeapon => hasWeapon;
+    public NetworkVariable<bool> IsHidden => isHidden;
     public float MaxStamina => maxStamina;
     public int HitsToDown => hitsToDown;
 
     protected override PlayerRole RoleValue => PlayerRole.Survivor;
 
-    protected override bool CanAct => !isDowned.Value;
+    protected override bool CanAct => base.CanAct && !isDowned.Value && !isHidden.Value;
+
+    // Locker hide/unhide (HidingLocker). The server can't move an owner-authoritative transform,
+    // so it replicates the anchor and every client applies the state locally: the owner teleports,
+    // and everyone (server included — its OverlapSphere melee check must not find a hidden
+    // Survivor) disables the CharacterController collider and hides the model.
+    public void ServerSetHidden(bool hidden, Vector3 anchor)
+    {
+        if (!IsServer) return;
+        hiddenAnchor.Value = anchor;
+        isHidden.Value = hidden;
+    }
+
+    private void HandleHiddenChanged(bool previous, bool current)
+    {
+        if (visualTransform != null) visualTransform.gameObject.SetActive(!current);
+        if (IsOwner) OwnerTeleport(hiddenAnchor.Value);
+        Controller.enabled = !current;
+    }
 
     protected override void Awake()
     {
@@ -64,6 +89,9 @@ public class SurvivorController : NetworkedCharacterMotor
 
         hasWeapon.OnValueChanged += HandleHasWeaponChanged;
         if (hasWeapon.Value) AttachSwordToRightHand();
+
+        isHidden.OnValueChanged += HandleHiddenChanged;
+        if (isHidden.Value) HandleHiddenChanged(false, true);
 
         // Any change to HitsTaken after spawn means "just got hit" (it only ever increments, no
         // heal/revive exists yet), so no initial-value special-casing is needed here unlike

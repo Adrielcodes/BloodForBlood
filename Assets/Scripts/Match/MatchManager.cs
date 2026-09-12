@@ -37,6 +37,36 @@ public class MatchManager : NetworkBehaviour
         {
             RegisterPlayer(client.PlayerObject);
         }
+
+        StartCoroutine(RandomizeObjectiveSpawns());
+    }
+
+    // The hospital map places more candidate spawn points than a match uses (8 beacon spots, 6
+    // item spots); each match keeps a random subset and despawns the rest. Deferred one frame
+    // because in-scene NetworkObjects all spawn during the same host-start pass this
+    // OnNetworkSpawn runs in — not every candidate is guaranteed to be spawned yet on this frame.
+    private System.Collections.IEnumerator RandomizeObjectiveSpawns()
+    {
+        yield return null;
+        KeepRandomSubset(FindObjectsByType<RestoreBeacon>(FindObjectsSortMode.None), 4);
+        KeepRandomSubset(FindObjectsByType<WeaponPickup>(FindObjectsSortMode.None), 3);
+    }
+
+    private static void KeepRandomSubset<T>(T[] candidates, int keep) where T : NetworkBehaviour
+    {
+        for (int i = candidates.Length - 1; i > 0; i--)
+        {
+            int j = Random.Range(0, i + 1);
+            (candidates[i], candidates[j]) = (candidates[j], candidates[i]);
+        }
+
+        for (int i = keep; i < candidates.Length; i++)
+        {
+            // Despawn(false) + the object's own OnNetworkDespawn -> SetActive(false) is the
+            // established "consumed in-scene object" pattern (see WeaponPickup).
+            if (candidates[i].IsSpawned) candidates[i].NetworkObject.Despawn(false);
+            candidates[i].gameObject.SetActive(false);
+        }
     }
 
     public override void OnNetworkDespawn()

@@ -50,6 +50,8 @@ public class RestoreBeacon : NetworkBehaviour
     public override void OnNetworkDespawn()
     {
         isActivated.OnValueChanged -= HandleActivatedChanged;
+        // Unused candidate spawn points get despawned by MatchManager at match start.
+        gameObject.SetActive(false);
     }
 
     private void HandleActivatedChanged(bool previous, bool current)
