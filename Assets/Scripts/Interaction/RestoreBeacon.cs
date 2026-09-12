@@ -57,7 +57,9 @@ public class RestoreBeacon : NetworkBehaviour
     private void HandleActivatedChanged(bool previous, bool current)
     {
         beamVisual.SetActive(current);
-        if (current) InteractionPromptController.Hide();
+        if (!current) return;
+        InteractionPromptController.Hide();
+        Sfx.PlayAt("BeaconActivate", transform.position, 1f, 0f, 90f);
     }
 
     private void OnTriggerEnter(Collider other)

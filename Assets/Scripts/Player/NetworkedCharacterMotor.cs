@@ -58,6 +58,7 @@ public abstract class NetworkedCharacterMotor : NetworkBehaviour
     private IEnumerator VaultRoutine(Vector3 target)
     {
         isActionLocked = true;
+        Sfx.PlayAt("Vault", transform.position, 0.7f, 0.1f, 20f);
         Vector3 start = transform.position;
         Vector3 flat = target - start;
         flat.y = 0f;

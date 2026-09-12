@@ -31,6 +31,8 @@ A 4v1 asymmetrical multiplayer horror game (Dead by Daylight-inspired): one **Ki
 - **Match flow**: `MatchManager` declares Killer/Survivor win based on downed-state / Killer HP, shown via an end-of-match banner.
 - **Boot flow**: `Boot.unity` (studio splash → title → menu with a 3D backdrop) is Build Settings scene 0; opening it and pressing Play (or `Setup Network Scaffolding`, which sets this as the Play-mode start scene) shows it — opening `SampleScene.unity` directly and pressing Play skips straight to gameplay for faster dev iteration.
 - **HUDs**: Survivor health/stamina, Killer health, match-end banner, interaction prompts, skill-check UI.
+- **Audio**: fully procedural (`Assets/Editor/ProceduralAudio.cs` → `Assets/Resources/Audio/*.wav`) — menu music, quiet hospital ambience, a DBD-style heartbeat that swells as the Killer approaches, and one-shots for doors, hits, vaults, beacons, skill checks and UI.
+- **Menu/lobby**: rendered blood-drip title logo and studio mark, campfire lobby backdrop with the Killer, bottom-bar menu, QUICK PLAY. Only PLAY/EXIT are functional; CUSTOMIZE/STORE/PROFILE are placeholders.
 
 ## What's explicitly not done yet
 

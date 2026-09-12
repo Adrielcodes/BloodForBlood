@@ -19,6 +19,11 @@ public class HidingLocker : NetworkBehaviour
 
     private NetworkedCharacterMotor localCandidate;
 
+    public override void OnNetworkSpawn()
+    {
+        occupantClientId.OnValueChanged += (previous, current) => Sfx.PlayAt("DoorSlam", transform.position, 0.5f, 0.1f, 20f);
+    }
+
     private void OnTriggerEnter(Collider other)
     {
         var motor = other.GetComponentInParent<NetworkedCharacterMotor>();

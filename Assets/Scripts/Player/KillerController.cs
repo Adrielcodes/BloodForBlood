@@ -63,8 +63,17 @@ public class KillerController : NetworkedCharacterMotor
 
         // Health only ever decreases (no heal exists yet), so any change after spawn means "just
         // took damage" — no initial-value special-casing needed.
-        health.OnValueChanged += (previous, current) => FlashHitColor(Color.red);
-        isStunned.OnValueChanged += (previous, current) => { if (current) FlashHitColor(Color.white, 0.4f); };
+        health.OnValueChanged += (previous, current) =>
+        {
+            FlashHitColor(Color.red);
+            Sfx.PlayAt("Hit", transform.position, 0.9f);
+        };
+        isStunned.OnValueChanged += (previous, current) =>
+        {
+            if (!current) return;
+            FlashHitColor(Color.white, 0.4f);
+            Sfx.PlayAt("Stun", transform.position, 0.9f);
+        };
 
         if (IsOwner)
         {

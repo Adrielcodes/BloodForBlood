@@ -92,6 +92,7 @@ public class BootSequenceController : MonoBehaviour
 
     public void OnPlayPressed()
     {
+        Sfx.Play2D("UIClick", 0.7f);
         StartCoroutine(TransitionToGameplay());
     }
 
@@ -105,6 +106,7 @@ public class BootSequenceController : MonoBehaviour
 
     public void OnQuitPressed()
     {
+        Sfx.Play2D("UIClick", 0.7f);
         Application.Quit();
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false;

@@ -96,11 +96,16 @@ public class SurvivorController : NetworkedCharacterMotor
         // Any change to HitsTaken after spawn means "just got hit" (it only ever increments, no
         // heal/revive exists yet), so no initial-value special-casing is needed here unlike
         // isDowned/hasWeapon above.
-        hitsTaken.OnValueChanged += (previous, current) => FlashHitColor(Color.red);
+        hitsTaken.OnValueChanged += (previous, current) =>
+        {
+            FlashHitColor(Color.red);
+            Sfx.PlayAt("Hit", transform.position, 1f);
+        };
 
         if (IsOwner)
         {
             SurvivorHudController.Create(this);
+            gameObject.AddComponent<TerrorRadiusAudio>();
         }
     }
 

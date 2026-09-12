@@ -2,10 +2,12 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-// A doorway a Survivor can slam shut (E toggles it open/closed for Survivors) to block a chase.
-// The Killer can't open it — they have to break it (E, then `breakDuration` seconds while staying
-// in range), after which it's gone for the rest of the match. Slamming it while the Killer is
-// standing in the doorway stuns them (DBD pallet-stun equivalent).
+// A doorway anyone can open or close with E. The difference between roles is what a *closed*
+// door means: a Survivor can open it again; the Killer can't — they have to break it (E, then
+// `breakDuration` seconds while staying in range), after which it's gone for the rest of the
+// match. Slamming it shut while the Killer is standing in the doorway stuns them (DBD
+// pallet-stun equivalent). Closing is available to the Killer too, so they can shut a route
+// behind a Survivor — but then it's a door they'd have to break to use themselves.
 //
 // In-scene NetworkObject with no client owner: same RPC convention as WeaponPickup/RestoreBeacon —
 // [Rpc(SendTo.Server)] with the server resolving the real caller from SenderClientId.
@@ -36,8 +38,16 @@ public class SlamDoor : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
-        isClosed.OnValueChanged += (previous, current) => ApplyVisualState();
-        isBroken.OnValueChanged += (previous, current) => ApplyVisualState();
+        isClosed.OnValueChanged += (previous, current) =>
+        {
+            ApplyVisualState();
+            Sfx.PlayAt("DoorSlam", transform.position, current ? 1f : 0.45f, 0.08f, 35f);
+        };
+        isBroken.OnValueChanged += (previous, current) =>
+        {
+            ApplyVisualState();
+            if (current) Sfx.PlayAt("DoorBreak", transform.position, 1f, 0.06f, 40f);
+        };
         ApplyVisualState();
     }
 
@@ -72,13 +82,12 @@ public class SlamDoor : NetworkBehaviour
         if (localCandidate == null || !IsSpawned || isBroken.Value) return;
         if (!localCandidate.CanCurrentlyAct) return;
 
-        bool isSurvivor = localCandidate is SurvivorController;
-        if (isSurvivor)
-            InteractionPromptController.Show(isClosed.Value ? "Press E to open door" : "Press E to slam door");
-        else if (isClosed.Value)
-            InteractionPromptController.Show(breakingClientId.HasValue ? "Breaking..." : "Press E to break door");
-        else
-            return;
+        bool isKiller = localCandidate is KillerController;
+        string prompt;
+        if (!isClosed.Value) prompt = "Press E to close door";
+        else if (!isKiller) prompt = "Press E to open door";
+        else prompt = breakingClientId.HasValue ? "Breaking..." : "Press E to break door";
+        InteractionPromptController.Show(prompt);
 
         Keyboard kb = Keyboard.current;
         if (kb != null && kb.eKey.wasPressedThisFrame) RequestInteractRpc();
@@ -106,13 +115,18 @@ public class SlamDoor : NetworkBehaviour
         NetworkedCharacterMotor caller = ResolveCaller(sender);
         if (caller == null || !IsClientInRange(sender)) return;
 
+        if (!isClosed.Value)
+        {
+            isClosed.Value = true;
+            if (caller is SurvivorController) StunKillersInDoorway();
+            return;
+        }
+
         if (caller is SurvivorController)
         {
-            bool closing = !isClosed.Value;
-            isClosed.Value = closing;
-            if (closing) StunKillersInDoorway();
+            isClosed.Value = false;
         }
-        else if (caller is KillerController && isClosed.Value && !breakingClientId.HasValue)
+        else if (caller is KillerController && !breakingClientId.HasValue)
         {
             breakingClientId = sender;
             breakStartTime = Time.time;

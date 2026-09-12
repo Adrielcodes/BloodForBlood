@@ -25,6 +25,7 @@ public static class NetworkScaffoldSetup
     {
         AssignCharacterPlaceholderMaterials();
         CreateOrUpdateCharacterAnimatorController();
+        ProceduralAudio.GenerateAll();
 
         CreateGroundPlane();
         HospitalMapBuilder.Build();
@@ -37,6 +38,7 @@ public static class NetworkScaffoldSetup
         GameObject weaponPickupPrefab = CreateWeaponPickupPrefab();
         GameObject matchManagerPrefab = CreateMatchManagerPrefab();
         PlaceMatchManagerInScene(matchManagerPrefab);
+        PlaceAmbientAudio();
         GameObject restoreBeaconPrefab = CreateRestoreBeaconPrefab();
 
         // Beacon/pickup candidate spawn points live in the map builder (8 + 6; MatchManager keeps
@@ -46,10 +48,26 @@ public static class NetworkScaffoldSetup
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene());
 
-        CreateBootScene();
+        BootSceneBuilder.Build();
         SetPlayModeStartScene();
 
+        // A multiplayer host must keep simulating when its window loses focus (and unfocused
+        // Editor testing through the MCP bridge otherwise freezes every Update-driven thing —
+        // fades, sequences — while audio keeps going, which reads as "the fade is broken").
+        PlayerSettings.runInBackground = true;
+
         Debug.Log("Blood For Blood: network scaffolding created (Ground + NetworkManager + Survivor/Killer prefabs + WeaponPickup + MatchManager + RestoreBeacon x4 + Boot scene).");
+    }
+
+    // Hospital ambience bed (wind, creaks, drips) for the gameplay scene — see ProceduralAudio.
+    private static void PlaceAmbientAudio()
+    {
+        GameObject go = GameObject.Find("AmbientAudio") ?? new GameObject("AmbientAudio");
+        LoopingAudio audio = go.GetComponent<LoopingAudio>() ?? go.AddComponent<LoopingAudio>();
+        var so = new SerializedObject(audio);
+        so.FindProperty("clipName").stringValue = "Ambient";
+        so.FindProperty("volume").floatValue = 0.28f;
+        so.ApplyModifiedPropertiesWithoutUndo();
     }
 
     // EditorSceneManager.playModeStartScene makes the Editor's Play button always launch from
@@ -132,11 +150,11 @@ public static class NetworkScaffoldSetup
         RenderSettings.fogMode = FogMode.Exponential;
         // Indoors now (roofed hospital): denser, darker fog so corridors fall off into black, and a
         // low ambient so the flickering fixtures are what actually lights the place.
-        RenderSettings.fogColor = new Color(0.03f, 0.035f, 0.05f);
-        RenderSettings.fogDensity = 0.018f;
+        RenderSettings.fogColor = new Color(0.06f, 0.085f, 0.09f);
+        RenderSettings.fogDensity = 0.013f;
 
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.11f, 0.12f, 0.16f);
+        RenderSettings.ambientLight = new Color(0.2f, 0.24f, 0.24f);
 
         // The hospital is lit by ~40 small fixtures; URP's default of 4 additional lights per
         // object leaves large surfaces black wherever the 5th+ nearby light gets culled.
@@ -206,18 +224,18 @@ public static class NetworkScaffoldSetup
         T Ensure<T>() where T : VolumeComponent => profile.TryGet(out T c) ? c : profile.Add<T>(true);
 
         Vignette vignette = Ensure<Vignette>();
-        vignette.intensity.Override(0.48f);
+        vignette.intensity.Override(0.4f);
         vignette.smoothness.Override(0.55f);
         vignette.color.Override(Color.black);
 
         ColorAdjustments color = Ensure<ColorAdjustments>();
         color.saturation.Override(-28f);
         color.contrast.Override(18f);
-        color.postExposure.Override(0.3f);
-        color.colorFilter.Override(new Color(0.86f, 0.94f, 1f));
+        color.postExposure.Override(0.6f);
+        color.colorFilter.Override(new Color(0.92f, 1f, 0.96f));
 
         LiftGammaGain lgg = Ensure<LiftGammaGain>();
-        lgg.lift.Override(new Vector4(0.94f, 0.97f, 1.02f, -0.04f));
+        lgg.lift.Override(new Vector4(0.96f, 0.99f, 1.01f, -0.015f));
         lgg.gamma.Override(new Vector4(0.95f, 0.98f, 1.03f, -0.02f));
         lgg.gain.Override(new Vector4(1f, 1f, 1.02f, 0f));
 
@@ -282,6 +300,7 @@ public static class NetworkScaffoldSetup
 
         Camera mainCam = Camera.main;
         if (mainCam == null) return;
+        if (mainCam.GetComponent<AudioListener>() == null) mainCam.gameObject.AddComponent<AudioListener>();
 
         UniversalAdditionalCameraData camData = mainCam.GetComponent<UniversalAdditionalCameraData>();
         if (camData == null)
@@ -416,7 +435,7 @@ public static class NetworkScaffoldSetup
         return AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
     }
 
-    private static GameObject BuildModelVisual(Transform parent, string modelPath, string prefabName)
+    internal static GameObject BuildModelVisual(Transform parent, string modelPath, string prefabName)
     {
         GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
         if (modelAsset == null)
@@ -742,288 +761,6 @@ public static class NetworkScaffoldSetup
         PrefabUtility.InstantiatePrefab(prefab);
     }
 
-    // Boot/loading flow: Assets/Scenes/Boot.unity becomes Build Settings scene 0 (SampleScene
-    // becomes scene 1) and shows Agape Forge -> "Blood For Blood" -> a menu with a Play button
-    // that loads SampleScene. Built additively alongside whatever scene is currently open (rather
-    // than via EditorSceneManager.NewScene(..., Single), which would replace it) so this never
-    // disrupts an in-progress editing session on SampleScene — the additive scene is closed again
-    // once saved, leaving the editor's open scenes exactly as they were before this ran.
-    private static void CreateBootScene()
-    {
-        const string bootScenePath = "Assets/Scenes/Boot.unity";
-
-        if (File.Exists(bootScenePath))
-        {
-            Debug.Log("Blood For Blood: Boot scene already present, skipping creation.");
-            ConfigureBuildScenes(bootScenePath);
-            return;
-        }
-
-        Scene originalActiveScene = EditorSceneManager.GetActiveScene();
-
-        Scene bootScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-        EditorSceneManager.SetActiveScene(bootScene);
-
-        var environmentRoot = new GameObject("MenuEnvironment");
-        BuildMenuEnvironment(environmentRoot.transform);
-
-        // NewSceneSetup.EmptyScene means truly empty — no Camera, no Light. A ScreenSpaceOverlay
-        // Canvas doesn't strictly need a Camera to render its own UI, but with zero cameras in the
-        // scene the Game view has nothing to render to at all ("Display 1 No cameras rendering").
-        // Framed on the showcase character built by BuildMenuEnvironment above.
-        var cameraGO = new GameObject("Main Camera");
-        cameraGO.tag = "MainCamera";
-        Camera bootCamera = cameraGO.AddComponent<Camera>();
-        bootCamera.clearFlags = CameraClearFlags.Skybox;
-        cameraGO.transform.position = new Vector3(-1.6f, 1.75f, -1.6f);
-        cameraGO.transform.rotation = Quaternion.Euler(6f, 32f, 0f);
-
-        // GraphicRaycaster (below, on the Canvas) needs an EventSystem in the scene to route
-        // clicks to UI at all — without one, the Play button would render but never respond to
-        // input. InputSystemUIInputModule (not the legacy StandaloneInputModule) since this
-        // project runs exclusively on the new Input System (see CLAUDE.md Gotchas).
-        var eventSystemGO = new GameObject("EventSystem");
-        eventSystemGO.AddComponent<EventSystem>();
-        eventSystemGO.AddComponent<InputSystemUIInputModule>();
-
-        var canvasGO = new GameObject("BootCanvas");
-        Canvas canvas = canvasGO.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        CanvasScaler scaler = canvasGO.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-        canvasGO.AddComponent<GraphicRaycaster>();
-
-        // Solid black full-screen cover for the studio/title cards only — BootSequenceController
-        // hides this once the menu appears, revealing the 3D backdrop built above.
-        var background = new GameObject("Background", typeof(Image));
-        background.transform.SetParent(canvasGO.transform, false);
-        RectTransform bgRect = background.GetComponent<RectTransform>();
-        bgRect.anchorMin = Vector2.zero;
-        bgRect.anchorMax = Vector2.one;
-        bgRect.offsetMin = Vector2.zero;
-        bgRect.offsetMax = Vector2.zero;
-        background.GetComponent<Image>().color = Color.black;
-
-        GameObject studioScreen = BuildTextScreen(canvasGO.transform, "StudioScreen", "AGAPE FORGE", 64, Color.white);
-        GameObject titleScreen = BuildTextScreen(canvasGO.transform, "TitleScreen", "BLOOD FOR BLOOD", 96, new Color(0.8f, 0.1f, 0.1f));
-        GameObject menuScreen = BuildMenuScreen(canvasGO.transform);
-
-        var controllerGO = new GameObject("BootSequenceController");
-        BootSequenceController controller = controllerGO.AddComponent<BootSequenceController>();
-        controller.Configure(studioScreen, titleScreen, menuScreen, background);
-
-        // Button.onClick.AddListener() from editor script code only registers a non-persistent
-        // (runtime-only) delegate — UnityEvent's serialized "persistent calls" list is a separate
-        // thing, and that's what actually survives a scene save. Without this, the click handler
-        // silently vanishes on save/reload: the button still renders and is clickable, it just
-        // does nothing when clicked. UnityEventTools.AddPersistentListener is the editor-time API
-        // for actually baking a serialized call into the scene, same as wiring it up by hand in
-        // the Inspector would.
-        Button playButton = menuScreen.transform.Find("LeftPanel/PlayButton").GetComponent<Button>();
-        UnityEditor.Events.UnityEventTools.AddPersistentListener(playButton.onClick, controller.OnPlayPressed);
-
-        Button quitButton = menuScreen.transform.Find("LeftPanel/QuitButton").GetComponent<Button>();
-        UnityEditor.Events.UnityEventTools.AddPersistentListener(quitButton.onClick, controller.OnQuitPressed);
-
-        if (!Directory.Exists("Assets/Scenes"))
-            Directory.CreateDirectory("Assets/Scenes");
-
-        EditorSceneManager.SaveScene(bootScene, bootScenePath);
-
-        EditorSceneManager.SetActiveScene(originalActiveScene);
-        EditorSceneManager.CloseScene(bootScene, true);
-
-        ConfigureBuildScenes(bootScenePath);
-    }
-
-    private static GameObject BuildTextScreen(Transform parent, string name, string message, int fontSize, Color color)
-    {
-        var screen = new GameObject(name);
-        screen.transform.SetParent(parent, false);
-        RectTransform screenRect = screen.AddComponent<RectTransform>();
-        screenRect.anchorMin = Vector2.zero;
-        screenRect.anchorMax = Vector2.one;
-        screenRect.offsetMin = Vector2.zero;
-        screenRect.offsetMax = Vector2.zero;
-
-        var textGO = new GameObject("Text", typeof(Text));
-        textGO.transform.SetParent(screen.transform, false);
-        RectTransform textRect = textGO.GetComponent<RectTransform>();
-        textRect.anchorMin = new Vector2(0.5f, 0.5f);
-        textRect.anchorMax = new Vector2(0.5f, 0.5f);
-        textRect.pivot = new Vector2(0.5f, 0.5f);
-        textRect.sizeDelta = new Vector2(1700f, 300f);
-
-        Text text = textGO.GetComponent<Text>();
-        text.text = message;
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = fontSize;
-        text.fontStyle = FontStyle.Bold;
-        text.alignment = TextAnchor.MiddleCenter;
-        text.color = color;
-
-        screen.SetActive(false);
-        return screen;
-    }
-
-    // DBD/Home Sweet Home-style layout: a semi-transparent left-side panel over a 3D backdrop
-    // (see BuildMenuEnvironment) rather than a full-screen overlay — the showcase character stays
-    // visible on the right of frame.
-    private static GameObject BuildMenuScreen(Transform parent)
-    {
-        var screen = new GameObject("MenuScreen");
-        screen.transform.SetParent(parent, false);
-        RectTransform screenRect = screen.AddComponent<RectTransform>();
-        screenRect.anchorMin = Vector2.zero;
-        screenRect.anchorMax = Vector2.one;
-        screenRect.offsetMin = Vector2.zero;
-        screenRect.offsetMax = Vector2.zero;
-
-        var panel = new GameObject("LeftPanel", typeof(Image));
-        panel.transform.SetParent(screen.transform, false);
-        RectTransform panelRect = panel.GetComponent<RectTransform>();
-        panelRect.anchorMin = new Vector2(0f, 0f);
-        panelRect.anchorMax = new Vector2(0f, 1f);
-        panelRect.pivot = new Vector2(0f, 0.5f);
-        panelRect.sizeDelta = new Vector2(520f, 0f);
-        panelRect.anchoredPosition = Vector2.zero;
-        panel.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.55f);
-
-        var titleGO = new GameObject("Title", typeof(Text));
-        titleGO.transform.SetParent(panel.transform, false);
-        RectTransform titleRect = titleGO.GetComponent<RectTransform>();
-        titleRect.anchorMin = new Vector2(0.5f, 1f);
-        titleRect.anchorMax = new Vector2(0.5f, 1f);
-        titleRect.pivot = new Vector2(0.5f, 1f);
-        titleRect.anchoredPosition = new Vector2(0f, -70f);
-        titleRect.sizeDelta = new Vector2(480f, 160f);
-        Text title = titleGO.GetComponent<Text>();
-        title.text = "BLOOD\nFOR BLOOD";
-        title.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        title.fontSize = 44;
-        title.fontStyle = FontStyle.Bold;
-        title.alignment = TextAnchor.UpperCenter;
-        title.color = new Color(0.82f, 0.12f, 0.12f);
-
-        // SETTINGS is deliberately non-interactive (dimmed, Button.interactable = false) rather
-        // than wired to a fake handler — a placeholder slot that reads as "not built yet" instead
-        // of implying a feature that doesn't exist.
-        BuildMenuButton(panel.transform, "PlayButton", "PLAY", new Vector2(0f, -280f), new Color(0.55f, 0.1f, 0.1f), true);
-        BuildMenuButton(panel.transform, "SettingsButton", "SETTINGS", new Vector2(0f, -360f), new Color(0.2f, 0.2f, 0.22f), false);
-        BuildMenuButton(panel.transform, "QuitButton", "QUIT", new Vector2(0f, -440f), new Color(0.3f, 0.12f, 0.12f), true);
-
-        screen.SetActive(false);
-        return screen;
-    }
-
-    private static void BuildMenuButton(Transform parent, string name, string label, Vector2 anchoredPosition, Color color, bool interactable)
-    {
-        var buttonGO = new GameObject(name, typeof(Image), typeof(Button));
-        buttonGO.transform.SetParent(parent, false);
-        RectTransform buttonRect = buttonGO.GetComponent<RectTransform>();
-        buttonRect.anchorMin = new Vector2(0.5f, 1f);
-        buttonRect.anchorMax = new Vector2(0.5f, 1f);
-        buttonRect.pivot = new Vector2(0.5f, 0.5f);
-        buttonRect.anchoredPosition = anchoredPosition;
-        buttonRect.sizeDelta = new Vector2(360f, 64f);
-        buttonGO.GetComponent<Image>().color = color;
-        buttonGO.GetComponent<Button>().interactable = interactable;
-
-        var textGO = new GameObject("Text", typeof(Text));
-        textGO.transform.SetParent(buttonGO.transform, false);
-        RectTransform textRect = textGO.GetComponent<RectTransform>();
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.offsetMin = Vector2.zero;
-        textRect.offsetMax = Vector2.zero;
-        Text text = textGO.GetComponent<Text>();
-        text.text = label;
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = 28;
-        text.fontStyle = FontStyle.Bold;
-        text.alignment = TextAnchor.MiddleCenter;
-        text.color = interactable ? Color.white : new Color(1f, 1f, 1f, 0.4f);
-    }
-
-    // 3D backdrop for the menu screen: moonlit ground/fog/skybox (matching the gameplay scene's
-    // ambiance), a couple of dead trees + a rock cluster for atmosphere, a warm point light for
-    // contrast against the cool moonlight (a cheap stand-in for a campfire glow, no particle
-    // system), and a static showcase character standing in view — same idea as Dead by Daylight's
-    // and Home Sweet Home's character-in-the-lobby main menus.
-    private static void BuildMenuEnvironment(Transform root)
-    {
-        RenderSettings.fog = true;
-        RenderSettings.fogMode = FogMode.Exponential;
-        RenderSettings.fogColor = new Color(0.05f, 0.06f, 0.09f);
-        RenderSettings.fogDensity = 0.03f;
-        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.12f, 0.13f, 0.17f);
-
-        Material sky = AssetDatabase.LoadAssetAtPath<Material>("Assets/Art/Environment/NightSkybox.mat");
-        if (sky != null) RenderSettings.skybox = sky;
-
-        var moonGO = new GameObject("MenuMoonlight");
-        moonGO.transform.SetParent(root, false);
-        Light moon = moonGO.AddComponent<Light>();
-        moon.type = LightType.Directional;
-        moon.color = new Color(0.6f, 0.65f, 0.85f);
-        moon.intensity = 0.5f;
-        moon.shadows = LightShadows.Soft;
-        moonGO.transform.rotation = Quaternion.Euler(35f, -120f, 0f);
-
-        var glowGO = new GameObject("MenuWarmGlow");
-        glowGO.transform.SetParent(root, false);
-        glowGO.transform.localPosition = new Vector3(0.6f, 1.3f, 2.6f);
-        Light glow = glowGO.AddComponent<Light>();
-        glow.type = LightType.Point;
-        glow.color = new Color(1f, 0.55f, 0.25f);
-        glow.intensity = 3f;
-        glow.range = 6f;
-
-        GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        ground.name = "MenuGround";
-        ground.transform.SetParent(root, false);
-        ground.transform.localScale = new Vector3(3f, 1f, 3f);
-        Material groundMat = CreateColorMaterial("MenuGroundMat", new Color(0.09f, 0.09f, 0.11f));
-        ground.GetComponent<Renderer>().sharedMaterial = groundMat;
-
-        Material rockMat = CreateColorMaterial("MenuRockMat", new Color(0.32f, 0.31f, 0.29f));
-        Material treeMat = CreateColorMaterial("MenuTreeMat", new Color(0.13f, 0.11f, 0.09f));
-        BuildDeadTree(root, treeMat, new Vector3(-3.2f, 0f, 2.2f));
-        BuildDeadTree(root, treeMat, new Vector3(3.6f, 0f, 3.4f));
-        BuildDeadTree(root, treeMat, new Vector3(-4.8f, 0f, -0.6f));
-        BuildRockCluster(root, rockMat, new Vector3(2.2f, 0f, -1.6f));
-
-        var showcaseRoot = new GameObject("MenuShowcase");
-        showcaseRoot.transform.SetParent(root, false);
-        showcaseRoot.transform.localPosition = new Vector3(1.2f, 1f, 3f);
-        showcaseRoot.transform.localRotation = Quaternion.Euler(0f, 160f, 0f);
-
-        GameObject showcaseVisual = BuildModelVisual(showcaseRoot.transform, $"{CharactersDir}/ZombieGirl.fbx", "MenuShowcase");
-        if (showcaseVisual != null)
-        {
-            showcaseVisual.transform.localScale = Vector3.one * 0.96f;
-        }
-
-        // Everything above went through CreateColorMaterial, which returns a plain in-memory
-        // Material — fine at pure runtime, but this scene gets saved to disk (SaveScene below in
-        // CreateBootScene), and a Material with no asset on disk can't be serialized into a saved
-        // scene either (same failure mode as WeaponPickup's prefab — see PersistRuntimeMaterials).
-        // The showcase character's own materials are already real remapped assets and get skipped.
-        PersistRuntimeMaterials(root.gameObject, "Assets/Art/Environment/Materials");
-    }
-
-    private static void ConfigureBuildScenes(string bootScenePath)
-    {
-        const string gameplayScenePath = "Assets/Scenes/SampleScene.unity";
-
-        EditorBuildSettings.scenes = new[]
-        {
-            new EditorBuildSettingsScene(bootScenePath, true),
-            new EditorBuildSettingsScene(gameplayScenePath, true)
-        };
-    }
 
     private static void CreateOrUpdateNetworkManager(GameObject survivorPrefab, GameObject killerPrefab)
     {

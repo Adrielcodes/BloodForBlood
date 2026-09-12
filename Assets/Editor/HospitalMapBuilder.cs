@@ -24,7 +24,7 @@ using UnityEngine.SceneManagement;
 // fog do the rest of the "abandoned" read.
 internal static class HospitalMapBuilder
 {
-    private const int Version = 3;
+    private const int Version = 6;
     private static string RootName => $"HospitalMap#{Version}";
 
     private const float FloorHeight = 4f;
@@ -106,6 +106,11 @@ internal static class HospitalMapBuilder
         BuildAtmosphere(root);
 
         NetworkScaffoldSetup.PersistRuntimeMaterials(root.gameObject, MaterialsDir);
+
+        // ~450 static primitives: batch them so the map is a handful of draw calls, not hundreds.
+        foreach (Transform t in root.GetComponentsInChildren<Transform>(true))
+            if (t.GetComponent<Renderer>() != null && t.GetComponent<ParticleSystem>() == null)
+                GameObjectUtility.SetStaticEditorFlags(t.gameObject, StaticEditorFlags.BatchingStatic);
     }
 
     public static void PlaceObjectives(GameObject beaconPrefab, GameObject pickupPrefab)
@@ -137,7 +142,7 @@ internal static class HospitalMapBuilder
 
     // Persisted URP/Lit with albedo + normal map, created or updated in place by name — these
     // are real .mat assets from the start, so PersistRuntimeMaterials leaves them alone.
-    private static Material Textured(string name, ProceduralTextures.Surface surface, Color tint, float smoothness, float metallic)
+    internal static Material Textured(string name, ProceduralTextures.Surface surface, Color tint, float smoothness, float metallic)
     {
         Material m = LoadOrCreate(name, "Universal Render Pipeline/Lit");
         m.SetTexture("_BaseMap", surface.Albedo);
@@ -151,7 +156,7 @@ internal static class HospitalMapBuilder
         return m;
     }
 
-    private static Material Emissive(string name, Color baseColor, Color emission)
+    internal static Material Emissive(string name, Color baseColor, Color emission)
     {
         Material m = LoadOrCreate(name, "Universal Render Pipeline/Lit");
         m.SetColor("_BaseColor", baseColor);
@@ -164,7 +169,7 @@ internal static class HospitalMapBuilder
 
     // Alpha-clipped decal rather than alpha-blended: cutout needs no blend/queue juggling and
     // sorts like opaque geometry, which is all a floor splat needs.
-    private static Material Cutout(string name, Texture2D texture, float smoothness)
+    internal static Material Cutout(string name, Texture2D texture, float smoothness)
     {
         Material m = LoadOrCreate(name, "Universal Render Pipeline/Lit");
         m.SetTexture("_BaseMap", texture);
@@ -179,16 +184,17 @@ internal static class HospitalMapBuilder
         return m;
     }
 
-    private static Material Particle(string name, Texture2D texture)
+    // `additive` for fire/embers (light adds up); default alpha blend for mist, dust and smoke.
+    internal static Material Particle(string name, Texture2D texture, bool additive = false)
     {
         Material m = LoadOrCreate(name, "Universal Render Pipeline/Particles/Unlit");
         m.SetTexture("_BaseMap", texture);
         m.SetColor("_BaseColor", Color.white);
         m.SetFloat("_Surface", 1f);
-        m.SetFloat("_Blend", 0f);
+        m.SetFloat("_Blend", additive ? 2f : 0f);
         m.SetOverrideTag("RenderType", "Transparent");
-        m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-        m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        m.SetInt("_SrcBlend", (int)(additive ? UnityEngine.Rendering.BlendMode.SrcAlpha : UnityEngine.Rendering.BlendMode.SrcAlpha));
+        m.SetInt("_DstBlend", (int)(additive ? UnityEngine.Rendering.BlendMode.One : UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha));
         m.SetInt("_ZWrite", 0);
         m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
         m.renderQueue = 3000;
@@ -260,7 +266,7 @@ internal static class HospitalMapBuilder
         WallWithGaps(floor, wallMat, V(14, 14), V(14, 28), H, 0f, (7f, 2f));
 
         // Short freestanding loop walls inside the bigger rooms — something to run around.
-        Wall(floor, wallMat, V(-20, -12), V(-20, -8), H, 0f, "LoopWall");
+        Wall(floor, wallMat, V(-16, -12), V(-16, -8), H, 0f, "LoopWall");
         Wall(floor, wallMat, V(18, 8), V(18, 12), H, 0f, "LoopWall");
         Wall(floor, wallMat, V(-4, 18), V(4, 18), H, 0f, "LoopWall");
     }
@@ -282,15 +288,17 @@ internal static class HospitalMapBuilder
         Window(upper, V(-12, -4), true, B);
         WallWithGaps(upper, wallMat, V(-28, 6), V(-3, 6), H, B, (10f, WindowWidth), (22f, 2f));
         Window(upper, V(-18, 6), true, B);
-        WallWithGaps(upper, wallMat, V(-12, -4), V(-12, 6), H, B, (5f, WindowWidth));
-        Window(upper, V(-12, 1), false, B);
+        // Partial loop walls sit at x=±9, clear of the x=±12 windows in the z=-4 walls — the first
+        // version started them exactly on those windows, which read as windows "cut off" by walls.
+        WallWithGaps(upper, wallMat, V(-9, -4), V(-9, 6), H, B, (5f, WindowWidth));
+        Window(upper, V(-9, 1), false, B);
 
         WallWithGaps(upper, wallMat, V(3, -4), V(28, -4), H, B, (9f, WindowWidth), (19f, 2f));
         Window(upper, V(12, -4), true, B);
         WallWithGaps(upper, wallMat, V(3, 6), V(28, 6), H, B, (3f, 2f), (15f, WindowWidth));
         Window(upper, V(18, 6), true, B);
-        WallWithGaps(upper, wallMat, V(12, -4), V(12, 6), H, B, (5f, WindowWidth));
-        Window(upper, V(12, 1), false, B);
+        WallWithGaps(upper, wallMat, V(9, -4), V(9, 6), H, B, (5f, WindowWidth));
+        Window(upper, V(9, 1), false, B);
 
         // Railings along every edge that overlooks a void. Gaps are the drop-down points.
         const float R = 1f;
@@ -369,7 +377,8 @@ internal static class HospitalMapBuilder
     private static void BuildLights(Transform root)
     {
         Transform group = Group(root, "Lights");
-        Color fluorescent = new Color(0.72f, 0.88f, 0.72f);
+        // Warmer, less green than the first pass — closer to the reference's teal-amber wash.
+        Color fluorescent = new Color(0.85f, 0.9f, 0.78f);
         int i = 0;
         // Ground-floor rooms are 3.85 high (slab underside), so tubes sit at 3.4; the lobby and
         // north wing are double-height atriums under the roof, so their fixtures hang as pendants
@@ -387,7 +396,7 @@ internal static class HospitalMapBuilder
         })
         {
             bool flicker = i++ % 3 != 1;
-            Fixture(group, new Vector3(x, y, z), fluorescent, flicker ? 4.5f : 3.6f, 14f, flicker);
+            Fixture(group, new Vector3(x, y, z), fluorescent, flicker ? 6.5f : 5.5f, 18f, flicker);
         }
 
         // Morgue: red emergency lighting for the Killer's start room, plus one dying white tube.
@@ -588,10 +597,16 @@ internal static class HospitalMapBuilder
     }
 
     // CreateSolidPart + AutoTile, so every textured primitive tiles by its own size.
-    private static GameObject Part(Transform parent, Material mat, string name, Vector3 localPos, Vector3 localScale, Vector3? localEuler = null)
+    private static GameObject Part(Transform parent, Material mat, string name, Vector3 localPos, Vector3 localScale, Vector3? localEuler = null, float metersPerTile = 2f)
     {
         GameObject part = NetworkScaffoldSetup.CreateSolidPart(PrimitiveType.Cube, parent, mat, name, localPos, localScale, localEuler);
-        part.AddComponent<AutoTile>();
+        AutoTile tile = part.AddComponent<AutoTile>();
+        if (!Mathf.Approximately(metersPerTile, 2f))
+        {
+            var so = new SerializedObject(tile);
+            so.FindProperty("metersPerTile").floatValue = metersPerTile;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
         return part;
     }
 
@@ -616,7 +631,7 @@ internal static class HospitalMapBuilder
         Vector3 center = (a + b) * 0.5f;
         center.y = baseY + height * 0.5f;
         float yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
-        return Part(parent, mat, name, center, new Vector3(thickness, height, length), new Vector3(0f, yaw, 0f));
+        return Part(parent, mat, name, center, new Vector3(thickness, height, length), new Vector3(0f, yaw, 0f), mat == wallMat ? 3.5f : 2f);
     }
 
     // `gaps` are (distance along the wall from `a`, width). Segments are emitted between them.

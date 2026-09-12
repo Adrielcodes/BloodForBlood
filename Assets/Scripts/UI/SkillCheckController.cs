@@ -72,6 +72,8 @@ public static class SkillCheckController
         needle.sprite = HudBar.GetSolidSprite();
         needle.color = Color.white;
 
+        Sfx.Play2D("SkillCheckWarn", 0.8f);
+
         float elapsed = 0f;
         bool resolved = false;
         bool success = false;
@@ -94,6 +96,7 @@ public static class SkillCheckController
         }
 
         UnityEngine.Object.Destroy(canvasGO);
+        Sfx.Play2D(success ? "SkillCheckSuccess" : "SkillCheckFail", 0.8f);
         onResult?.Invoke(success);
     }
 

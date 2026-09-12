@@ -31,7 +31,7 @@ internal static class ProceduralTextures
             Color col = new Color(0.60f, 0.66f, 0.60f) * (1f + mottle * 0.2f) * (1f - grime * 0.5f) * (1f - dado * 0.35f);
             return (col, 0.5f + mottle * 0.3f - dado * 0.4f);
         });
-        Cracks(c, h, 3, 21);
+        Cracks(c, h, 1, 21);
     });
 
     public static Surface FloorTile() => Get("FloorTile", (c, h) =>

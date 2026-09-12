@@ -26,7 +26,11 @@ public class BreakableBarrier : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
-        isBroken.OnValueChanged += (previous, current) => ApplyVisualState();
+        isBroken.OnValueChanged += (previous, current) =>
+        {
+            ApplyVisualState();
+            if (current) Sfx.PlayAt("DoorBreak", transform.position, 1f, 0.06f, 40f);
+        };
         ApplyVisualState();
     }
 
