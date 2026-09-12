@@ -44,6 +44,7 @@ GameObject:
   - component: {fileID: 5306812389199269894}
   - component: {fileID: 2037574856353092221}
   - component: {fileID: 3017136520516283891}
+  - component: {fileID: 5429862735310891058}
   m_Layer: 0
   m_Name: Panel
   m_TagString: Untagged
@@ -144,6 +145,20 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!114 &5429862735310891058
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5108670446263623372}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7a1692920b78ab54a9a71125d1e36a53, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AutoTile
+  metersPerTile: 2
+  unitScale: 1
 --- !u!1 &7056917565578325666
 GameObject:
   m_ObjectHideFlags: 0
@@ -192,7 +207,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 3088798860
+  GlobalObjectIdHash: 4024879426
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0

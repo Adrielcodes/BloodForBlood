@@ -34,7 +34,7 @@ A 4v1 asymmetrical multiplayer horror game (Dead by Daylight-inspired): one **Ki
 
 ## What's explicitly not done yet
 
-- Real 3D models/animations for anything beyond the two placeholder characters (flat-color materials throughout).
+- Real 3D models/animations for anything beyond the two placeholder characters. The hospital's textures (walls, tiles, ceiling panels, metal, wood, blood) are all procedurally generated PNGs (`Assets/Editor/ProceduralTextures.cs`), not authored art — good enough to read as a game, easy to swap for real textures later by replacing the PNGs.
 - Beacons don't affect win/loss.
 - No lobby/matchmaking — local LAN loopback only (`127.0.0.1:7777`).
 - No settings menu (the boot menu's SETTINGS button is intentionally disabled, not broken).

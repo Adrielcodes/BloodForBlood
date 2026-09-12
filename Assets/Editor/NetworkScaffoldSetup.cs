@@ -130,11 +130,22 @@ public static class NetworkScaffoldSetup
     {
         RenderSettings.fog = true;
         RenderSettings.fogMode = FogMode.Exponential;
-        RenderSettings.fogColor = new Color(0.09f, 0.1f, 0.13f);
-        RenderSettings.fogDensity = 0.008f;
+        // Indoors now (roofed hospital): denser, darker fog so corridors fall off into black, and a
+        // low ambient so the flickering fixtures are what actually lights the place.
+        RenderSettings.fogColor = new Color(0.03f, 0.035f, 0.05f);
+        RenderSettings.fogDensity = 0.018f;
 
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.16f, 0.17f, 0.21f);
+        RenderSettings.ambientLight = new Color(0.11f, 0.12f, 0.16f);
+
+        // The hospital is lit by ~40 small fixtures; URP's default of 4 additional lights per
+        // object leaves large surfaces black wherever the 5th+ nearby light gets culled.
+        if (GraphicsSettings.currentRenderPipeline is UniversalRenderPipelineAsset urp)
+        {
+            urp.maxAdditionalLightsCount = 8;
+            urp.supportsHDR = true;
+            EditorUtility.SetDirty(urp);
+        }
 
         // Moonlight, not sunlight — low intensity, pale cool tint.
         Light[] lights = Object.FindObjectsByType<Light>(FindObjectsInactive.Exclude);
@@ -185,6 +196,47 @@ public static class NetworkScaffoldSetup
     // Global URP Volume with a subtle vignette + desaturation/underexposure for horror mood.
     // Guarded defensively (missing Camera.main, etc. just skip rather than throw) since this
     // runs as part of the one-shot scaffold tool and shouldn't be able to abort the rest of it.
+    // The full "DBD grade": bloom on the fluorescent tubes/beacon beam, film grain, a touch of
+    // chromatic aberration, crushed cool blacks and a heavy vignette. Adds/updates each override
+    // in place on the existing profile asset, so re-running Setup() re-applies the tuning.
+    private static void EnsureHorrorGrade(VolumeProfile profile)
+    {
+        if (profile == null) return;
+
+        T Ensure<T>() where T : VolumeComponent => profile.TryGet(out T c) ? c : profile.Add<T>(true);
+
+        Vignette vignette = Ensure<Vignette>();
+        vignette.intensity.Override(0.48f);
+        vignette.smoothness.Override(0.55f);
+        vignette.color.Override(Color.black);
+
+        ColorAdjustments color = Ensure<ColorAdjustments>();
+        color.saturation.Override(-28f);
+        color.contrast.Override(18f);
+        color.postExposure.Override(0.3f);
+        color.colorFilter.Override(new Color(0.86f, 0.94f, 1f));
+
+        LiftGammaGain lgg = Ensure<LiftGammaGain>();
+        lgg.lift.Override(new Vector4(0.94f, 0.97f, 1.02f, -0.04f));
+        lgg.gamma.Override(new Vector4(0.95f, 0.98f, 1.03f, -0.02f));
+        lgg.gain.Override(new Vector4(1f, 1f, 1.02f, 0f));
+
+        Bloom bloom = Ensure<Bloom>();
+        bloom.intensity.Override(0.9f);
+        bloom.threshold.Override(0.95f);
+        bloom.scatter.Override(0.75f);
+
+        FilmGrain grain = Ensure<FilmGrain>();
+        grain.type.Override(FilmGrainLookup.Medium2);
+        grain.intensity.Override(0.4f);
+        grain.response.Override(0.7f);
+
+        ChromaticAberration ca = Ensure<ChromaticAberration>();
+        ca.intensity.Override(0.18f);
+
+        EditorUtility.SetDirty(profile);
+    }
+
     private static void SetupPostProcessing()
     {
         const string profileDir = "Assets/Art/Environment";
@@ -225,6 +277,8 @@ public static class NetworkScaffoldSetup
 
             volume.sharedProfile = profile;
         }
+
+        EnsureHorrorGrade(AssetDatabase.LoadAssetAtPath<VolumeProfile>(profilePath));
 
         Camera mainCam = Camera.main;
         if (mainCam == null) return;
